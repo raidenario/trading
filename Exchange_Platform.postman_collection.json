@@ -1,0 +1,299 @@
+{
+  "info": {
+    "name": "Exchange Platform APIs",
+    "description": "Uma collection pré-configurada para testar sua Exchange Simulator com Gateway, Query e Ledger rodando nas portas 8080 (Gateway), 8081 (Query) e 8082 (Ledger).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "gateway_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "query_url",
+      "value": "http://localhost:8081",
+      "type": "string"
+    },
+    {
+      "key": "ledger_url",
+      "value": "http://localhost:8082",
+      "type": "string"
+    },
+    {
+      "key": "account_id",
+      "value": "12345678-1234-1234-1234-123456789012",
+      "type": "string"
+    },
+    {
+      "key": "symbol",
+      "value": "BTCUSD",
+      "type": "string"
+    },
+    {
+      "key": "order_id",
+      "value": "00000000-0000-0000-0000-000000000000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Gateway API (Criação de Ordens e Rotas de Entrada)",
+      "item": [
+        {
+          "name": "Health Check (Gateway)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/health",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Order (Buy Limit)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"orderId\": \"{{$guid}}\",\r\n  \"accountId\": \"{{account_id}}\",\r\n  \"symbol\": \"{{symbol}}\",\r\n  \"side\": \"Buy\",\r\n  \"type\": \"Limit\",\r\n  \"quantity\": 1.5,\r\n  \"price\": 65000,\r\n  \"timeInForce\": \"Gtc\",\r\n  \"clientOrderId\": \"postman-test-1\",\r\n  \"submittedAt\": \"{{$isoTimestamp}}\",\r\n  \"schemaVersion\": 1\r\n}"
+            },
+            "url": {
+              "raw": "{{gateway_url}}/api/orders",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cancel Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"accountId\": \"{{account_id}}\",\r\n  \"symbol\": \"{{symbol}}\",\r\n  \"requestedAt\": \"{{$isoTimestamp}}\"\r\n}"
+            },
+            "url": {
+              "raw": "{{gateway_url}}/api/orders/{{order_id}}/cancel",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{order_id}}",
+                "cancel"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Order By ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/api/orders/{{order_id}}",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{order_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Orders by Account",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gateway_url}}/api/orders?accountId={{account_id}}",
+              "host": [
+                "{{gateway_url}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "accountId",
+                  "value": "{{account_id}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Query API (Consultas e Market Data)",
+      "item": [
+        {
+          "name": "Health Check (Query)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{query_url}}/health",
+              "host": [
+                "{{query_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Order History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{query_url}}/api/history/orders?accountId={{account_id}}",
+              "host": [
+                "{{query_url}}"
+              ],
+              "path": [
+                "api",
+                "history",
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "accountId",
+                  "value": "{{account_id}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Query Balances",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{query_url}}/api/balances/{{account_id}}",
+              "host": [
+                "{{query_url}}"
+              ],
+              "path": [
+                "api",
+                "balances",
+                "{{account_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Market Ticker",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{query_url}}/api/markets/{{symbol}}/ticker",
+              "host": [
+                "{{query_url}}"
+              ],
+              "path": [
+                "api",
+                "markets",
+                "{{symbol}}",
+                "ticker"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Ledger Service (Saldos e Entradas Contábeis)",
+      "item": [
+        {
+          "name": "Health Check (Ledger)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{ledger_url}}/health",
+              "host": [
+                "{{ledger_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Ledger Account",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{ledger_url}}/api/ledger/accounts/{{account_id}}",
+              "host": [
+                "{{ledger_url}}"
+              ],
+              "path": [
+                "api",
+                "ledger",
+                "accounts",
+                "{{account_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Ledger Balances",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{ledger_url}}/api/ledger/accounts/{{account_id}}/balances",
+              "host": [
+                "{{ledger_url}}"
+              ],
+              "path": [
+                "api",
+                "ledger",
+                "accounts",
+                "{{account_id}}",
+                "balances"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

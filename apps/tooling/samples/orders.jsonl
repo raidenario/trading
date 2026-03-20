@@ -1,0 +1,2 @@
+{"offset_seconds":0.0,"order":{"orderId":"11111111-1111-1111-1111-111111111111","accountId":"sim-account-1","symbol":"BTC-USD","side":"Buy","type":"Limit","quantity":0.15,"price":50000.0,"timeInForce":"Gtc","clientOrderId":null,"submittedAt":"2026-01-01T00:00:00Z"}}
+{"offset_seconds":1.5,"order":{"orderId":"22222222-2222-2222-2222-222222222222","accountId":"sim-account-2","symbol":"BTC-USD","side":"Sell","type":"Limit","quantity":0.08,"price":50010.0,"timeInForce":"Gtc","clientOrderId":null,"submittedAt":"2026-01-01T00:00:01Z"}}

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\libs\dotnet\Exchange.Trading.Application\Exchange.Trading.Application.csproj" />
+    <ProjectReference Include="..\..\..\..\libs\dotnet\Exchange.Trading.Infrastructure\Exchange.Trading.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\..\libs\contracts\dotnet\Exchange.Platform.Contracts\Exchange.Platform.Contracts.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

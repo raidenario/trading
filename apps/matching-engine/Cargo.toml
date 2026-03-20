@@ -1,0 +1,24 @@
+[package]
+name = "matching-engine"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance in-memory matching engine for the exchange platform"
+
+[lib]
+name = "matching_engine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "matching-engine-service"
+path = "src/main.rs"
+
+[dependencies]
+rdkafka = { version = "0.36", features = ["cmake-build"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.37", features = ["full"] }
+futures = "0.3"
+uuid = { version = "1.8", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+env_logger = "0.11"

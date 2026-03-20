@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "exchange/contracts/v1/trade-executed",
+  "title": "TradeExecuted",
+  "type": "object",
+  "required": ["tradeId", "buyOrderId", "sellOrderId", "symbol", "price", "quantity", "executedAt", "schemaVersion"],
+  "properties": {
+    "tradeId": { "type": "string" },
+    "buyOrderId": { "type": "string", "format": "uuid" },
+    "sellOrderId": { "type": "string", "format": "uuid" },
+    "symbol": { "type": "string" },
+    "price": { "type": "number", "exclusiveMinimum": 0 },
+    "quantity": { "type": "number", "exclusiveMinimum": 0 },
+    "executedAt": { "type": "string", "format": "date-time" },
+    "schemaVersion": { "type": "integer", "const": 1 }
+  }
+}

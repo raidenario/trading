@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "exchange/contracts/v1/ticker-updated",
+  "title": "TickerUpdated",
+  "type": "object",
+  "required": ["symbol", "lastPrice", "bestBid", "bestAsk", "volume24H", "change24H", "asOf", "schemaVersion"],
+  "properties": {
+    "symbol": { "type": "string" },
+    "lastPrice": { "type": "number", "exclusiveMinimum": 0 },
+    "bestBid": { "type": "number", "minimum": 0 },
+    "bestAsk": { "type": "number", "minimum": 0 },
+    "volume24H": { "type": "number", "minimum": 0 },
+    "change24H": { "type": "number" },
+    "asOf": { "type": "string", "format": "date-time" },
+    "schemaVersion": { "type": "integer", "const": 1 }
+  }
+}

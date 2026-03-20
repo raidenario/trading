@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "exchange/contracts/v1/book-updated",
+  "title": "BookUpdated",
+  "type": "object",
+  "required": ["symbol", "bids", "asks", "asOf", "schemaVersion"],
+  "properties": {
+    "symbol": { "type": "string" },
+    "bids": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/bookLevel" }
+    },
+    "asks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/bookLevel" }
+    },
+    "asOf": { "type": "string", "format": "date-time" },
+    "schemaVersion": { "type": "integer", "const": 1 }
+  },
+  "$defs": {
+    "bookLevel": {
+      "type": "object",
+      "required": ["price", "quantity", "orderCount"],
+      "properties": {
+        "price": { "type": "number", "exclusiveMinimum": 0 },
+        "quantity": { "type": "number", "minimum": 0 },
+        "orderCount": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

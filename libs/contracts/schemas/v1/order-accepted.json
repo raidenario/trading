@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "exchange/contracts/v1/order-accepted",
+  "title": "OrderAccepted",
+  "type": "object",
+  "required": ["orderId", "accountId", "symbol", "status", "remainingQuantity", "acceptedAt", "schemaVersion"],
+  "properties": {
+    "orderId": { "type": "string", "format": "uuid" },
+    "accountId": { "type": "string", "format": "uuid" },
+    "symbol": { "type": "string" },
+    "status": { "type": "string", "enum": ["Pending", "Accepted", "PartiallyFilled", "Filled", "Cancelled", "Rejected"] },
+    "remainingQuantity": { "type": "number", "minimum": 0 },
+    "acceptedAt": { "type": "string", "format": "date-time" },
+    "schemaVersion": { "type": "integer", "const": 1 }
+  }
+}

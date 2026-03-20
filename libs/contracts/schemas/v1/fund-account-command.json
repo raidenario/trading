@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FundAccountCommand",
+  "type": "object",
+  "required": ["accountId", "asset", "amount", "requestedAt"],
+  "properties": {
+    "accountId": { "type": "string", "format": "uuid" },
+    "asset": { "type": "string", "minLength": 1, "maxLength": 10 },
+    "amount": { "type": "number", "exclusiveMinimum": 0 },
+    "referenceId": { "type": ["string", "null"] },
+    "requestedAt": { "type": "string", "format": "date-time" },
+    "schemaVersion": { "type": "integer", "default": 1 }
+  }
+}

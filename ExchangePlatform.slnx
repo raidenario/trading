@@ -1,0 +1,30 @@
+<Solution>
+  <Folder Name="/apps/" />
+  <Folder Name="/apps/gateway-api/" />
+  <Folder Name="/apps/gateway-api/src/">
+    <Project Path="apps/gateway-api/src/Exchange.Gateway.Api/Exchange.Gateway.Api.csproj" />
+  </Folder>
+  <Folder Name="/apps/ledger-service/" />
+  <Folder Name="/apps/ledger-service/src/">
+    <Project Path="apps/ledger-service/src/Exchange.Ledger.Api/Exchange.Ledger.Api.csproj" />
+  </Folder>
+  <Folder Name="/apps/query-api/" />
+  <Folder Name="/apps/query-api/src/">
+    <Project Path="apps/query-api/src/Exchange.Query.Api/Exchange.Query.Api.csproj" />
+  </Folder>
+  <Folder Name="/libs/" />
+  <Folder Name="/libs/contracts/" />
+  <Folder Name="/libs/contracts/dotnet/">
+    <Project Path="libs/contracts/dotnet/Exchange.Platform.Contracts/Exchange.Platform.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/libs/dotnet/">
+    <Project Path="libs/dotnet/Exchange.Ledger.Domain/Exchange.Ledger.Domain.csproj" />
+    <Project Path="libs/dotnet/Exchange.Trading.Application/Exchange.Trading.Application.csproj" />
+    <Project Path="libs/dotnet/Exchange.Trading.Domain/Exchange.Trading.Domain.csproj" />
+    <Project Path="libs/dotnet/Exchange.Trading.Infrastructure/Exchange.Trading.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/dotnet/">
+    <Project Path="tests/dotnet/Exchange.Trading.Domain.Tests/Exchange.Trading.Domain.Tests.csproj" />
+  </Folder>
+</Solution>

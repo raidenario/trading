@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "exchange/contracts/v1/cancel-order-command",
+  "title": "CancelOrderCommand",
+  "type": "object",
+  "required": ["orderId", "accountId", "symbol", "requestedAt", "schemaVersion"],
+  "properties": {
+    "orderId": { "type": "string", "format": "uuid" },
+    "accountId": { "type": "string", "format": "uuid" },
+    "symbol": { "type": "string" },
+    "requestedAt": { "type": "string", "format": "date-time" },
+    "schemaVersion": { "type": "integer", "const": 1 }
+  }
+}

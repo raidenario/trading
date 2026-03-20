@@ -1,0 +1,176 @@
+services:
+
+  # =====================================================
+  # Infrastructure
+  # =====================================================
+
+  postgres:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: exchange
+      POSTGRES_PASSWORD: exchange
+      POSTGRES_DB: exchange
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../postgres/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U exchange -d exchange"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 2181 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    ports:
+      - "9092:9092"
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command: |
+      echo 'Creating Kafka topics...'
+      kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic order-commands     --partitions 3 --replication-factor 1
+      kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic matching-events    --partitions 3 --replication-factor 1
+      kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic ledger-events      --partitions 3 --replication-factor 1
+      kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic marketdata-events  --partitions 3 --replication-factor 1
+      kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic account-events     --partitions 2 --replication-factor 1
+      echo 'Topics created successfully.'
+      kafka-topics --list --bootstrap-server kafka:9092
+
+  # =====================================================
+  # Application Services
+  # =====================================================
+
+  gateway-api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/gateway-api.Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=exchange;Username=exchange;Password=exchange"
+      ConnectionStrings__Redis: "redis:6379"
+      Kafka__BootstrapServers: "kafka:9092"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      matching-engine:
+        condition: service_started
+
+  query-api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/query-api.Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=exchange;Username=exchange;Password=exchange"
+      ConnectionStrings__Redis: "redis:6379"
+      Kafka__BootstrapServers: "kafka:9092"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  ledger-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/ledger-service.Dockerfile
+    ports:
+      - "8082:8080"
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=exchange;Username=exchange;Password=exchange"
+      ConnectionStrings__Redis: "redis:6379"
+      Kafka__BootstrapServers: "kafka:9092"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  matching-engine:
+    build:
+      context: ../..
+      dockerfile: infra/docker/matching-engine.Dockerfile
+    ports:
+      - "7000:7000"
+
+  realtime-gateway:
+    build:
+      context: ../..
+      dockerfile: infra/docker/realtime-gateway.Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      PHX_SERVER: "true"
+      SECRET_KEY_BASE: "xL7x2kZ9qB8nR5vF3gH1jK4mP6wT0yA9cE2iO5uQ8sV1bN4dG7lJ0rX3aF6hM"
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: infra/docker/frontend.Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - gateway-api
+      - query-api
+      - ledger-service
+
+volumes:
+  pgdata:

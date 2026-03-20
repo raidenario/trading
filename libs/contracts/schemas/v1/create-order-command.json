@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "exchange/contracts/v1/create-order-command",
+  "title": "CreateOrderCommand",
+  "type": "object",
+  "required": ["orderId", "accountId", "symbol", "side", "type", "quantity", "timeInForce", "submittedAt", "schemaVersion"],
+  "properties": {
+    "orderId": { "type": "string", "format": "uuid" },
+    "accountId": { "type": "string", "format": "uuid" },
+    "symbol": { "type": "string" },
+    "side": { "type": "string", "enum": ["Buy", "Sell"] },
+    "type": { "type": "string", "enum": ["Limit", "Market"] },
+    "quantity": { "type": "number", "exclusiveMinimum": 0 },
+    "price": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+    "timeInForce": { "type": "string", "enum": ["Gtc", "Ioc", "Fok"] },
+    "clientOrderId": { "type": ["string", "null"] },
+    "submittedAt": { "type": "string", "format": "date-time" },
+    "schemaVersion": { "type": "integer", "const": 1 }
+  }
+}

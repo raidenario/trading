@@ -1,0 +1,43 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Rust
+target/
+
+# Elixir
+_build/
+deps/
+.elixir_ls/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+.venv/
+venv/
+
+# Node / Frontend
+node_modules/
+.vite/
+
+# IDE
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.env.local
+
+# Docker
+pgdata/
+
+# Gemini
+.gemini/

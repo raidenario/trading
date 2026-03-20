@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "exchange/contracts/v1/order-rejected",
+  "title": "OrderRejected",
+  "type": "object",
+  "required": ["orderId", "accountId", "symbol", "reason", "rejectedAt", "schemaVersion"],
+  "properties": {
+    "orderId": { "type": "string", "format": "uuid" },
+    "accountId": { "type": "string", "format": "uuid" },
+    "symbol": { "type": "string" },
+    "reason": { "type": "string" },
+    "rejectedAt": { "type": "string", "format": "date-time" },
+    "schemaVersion": { "type": "integer", "const": 1 }
+  }
+}

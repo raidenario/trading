@@ -1,0 +1,147 @@
+{
+  "info": {
+    "name": "Exchange Platform (Local - Complete)",
+    "description": "Collection completa para testar a Exchange Platform rodando localmente.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "gateway_url", "value": "http://localhost:5103" },
+    { "key": "query_url", "value": "http://localhost:5267" },
+    { "key": "ledger_url", "value": "http://localhost:5075" },
+    { "key": "account_id", "value": "11111111-1111-1111-1111-111111111111" },
+    { "key": "symbol", "value": "BTC-USD" },
+    { "key": "order_id", "value": "00000000-0000-0000-0000-000000000000" }
+  ],
+  "item": [
+    {
+      "name": "1. Accounts",
+      "item": [
+        {
+          "name": "List All Accounts",
+          "request": { "method": "GET", "url": { "raw": "{{gateway_url}}/api/accounts" } }
+        },
+        {
+          "name": "Get Account By ID",
+          "request": { "method": "GET", "url": { "raw": "{{gateway_url}}/api/accounts/{{account_id}}" } }
+        },
+        {
+          "name": "Create Account",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"accountId\": \"{{$guid}}\",\n  \"displayName\": \"Test User\",\n  \"email\": \"test@exchange.local\",\n  \"requestedAt\": \"{{$isoTimestamp}}\"\n}" },
+            "url": { "raw": "{{gateway_url}}/api/accounts" }
+          }
+        },
+        {
+          "name": "Fund Account (USD)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"asset\": \"USD\",\n  \"amount\": 50000\n}" },
+            "url": { "raw": "{{gateway_url}}/api/accounts/{{account_id}}/fund" }
+          }
+        },
+        {
+          "name": "Fund Account (BTC)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"asset\": \"BTC\",\n  \"amount\": 2.5\n}" },
+            "url": { "raw": "{{gateway_url}}/api/accounts/{{account_id}}/fund" }
+          }
+        },
+        {
+          "name": "Get Account Balances",
+          "request": { "method": "GET", "url": { "raw": "{{gateway_url}}/api/accounts/{{account_id}}/balances" } }
+        }
+      ]
+    },
+    {
+      "name": "2. Orders",
+      "item": [
+        {
+          "name": "Create Order (Buy Limit BTC)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"orderId\": \"{{$guid}}\",\n  \"accountId\": \"{{account_id}}\",\n  \"symbol\": \"{{symbol}}\",\n  \"side\": \"Buy\",\n  \"type\": \"Limit\",\n  \"quantity\": 0.5,\n  \"price\": 50000,\n  \"timeInForce\": \"Gtc\",\n  \"clientOrderId\": \"postman-buy-1\",\n  \"submittedAt\": \"{{$isoTimestamp}}\",\n  \"schemaVersion\": 1\n}" },
+            "url": { "raw": "{{gateway_url}}/api/orders" }
+          }
+        },
+        {
+          "name": "Create Order (Sell Limit BTC)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"orderId\": \"{{$guid}}\",\n  \"accountId\": \"{{account_id}}\",\n  \"symbol\": \"{{symbol}}\",\n  \"side\": \"Sell\",\n  \"type\": \"Limit\",\n  \"quantity\": 0.3,\n  \"price\": 51000,\n  \"timeInForce\": \"Gtc\",\n  \"clientOrderId\": \"postman-sell-1\",\n  \"submittedAt\": \"{{$isoTimestamp}}\",\n  \"schemaVersion\": 1\n}" },
+            "url": { "raw": "{{gateway_url}}/api/orders" }
+          }
+        },
+        {
+          "name": "Cancel Order",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"accountId\": \"{{account_id}}\",\n  \"symbol\": \"{{symbol}}\",\n  \"requestedAt\": \"{{$isoTimestamp}}\"\n}" },
+            "url": { "raw": "{{gateway_url}}/api/orders/{{order_id}}/cancel" }
+          }
+        },
+        {
+          "name": "Get Order By ID",
+          "request": { "method": "GET", "url": { "raw": "{{gateway_url}}/api/orders/{{order_id}}" } }
+        },
+        {
+          "name": "List Orders by Account",
+          "request": { "method": "GET", "url": { "raw": "{{gateway_url}}/api/orders?accountId={{account_id}}" } }
+        }
+      ]
+    },
+    {
+      "name": "3. Query (Market Data)",
+      "item": [
+        {
+          "name": "Get Ticker",
+          "request": { "method": "GET", "url": { "raw": "{{query_url}}/api/markets/{{symbol}}/ticker" } }
+        },
+        {
+          "name": "Get Recent Trades",
+          "request": { "method": "GET", "url": { "raw": "{{query_url}}/api/trades/recent?symbol={{symbol}}&limit=10" } }
+        },
+        {
+          "name": "Get Market Overview",
+          "request": { "method": "GET", "url": { "raw": "{{query_url}}/api/markets/overview" } }
+        },
+        {
+          "name": "Get Order History",
+          "request": { "method": "GET", "url": { "raw": "{{query_url}}/api/history/orders?accountId={{account_id}}" } }
+        },
+        {
+          "name": "Get Query Balances",
+          "request": { "method": "GET", "url": { "raw": "{{query_url}}/api/balances/{{account_id}}" } }
+        }
+      ]
+    },
+    {
+      "name": "4. Ledger",
+      "item": [
+        {
+          "name": "Get Ledger Account",
+          "request": { "method": "GET", "url": { "raw": "{{ledger_url}}/api/ledger/accounts/{{account_id}}" } }
+        },
+        {
+          "name": "Get Ledger Balances",
+          "request": { "method": "GET", "url": { "raw": "{{ledger_url}}/api/ledger/accounts/{{account_id}}/balances" } }
+        }
+      ]
+    },
+    {
+      "name": "5. Health Checks",
+      "item": [
+        { "name": "Gateway Health", "request": { "method": "GET", "url": { "raw": "{{gateway_url}}/health" } } },
+        { "name": "Query Health", "request": { "method": "GET", "url": { "raw": "{{query_url}}/health" } } },
+        { "name": "Ledger Health", "request": { "method": "GET", "url": { "raw": "{{ledger_url}}/health" } } }
+      ]
+    }
+  ]
+}
