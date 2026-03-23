@@ -1,8 +1,19 @@
-use std::time::Duration;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::message::Message;
 use matching_engine::{MatchingEngine, Order};
+
+const DECIMAL_SCALE: f64 = 10_000.0;
+
+fn format_ticks(value: u64) -> String {
+    format!("{:.4}", value as f64 / DECIMAL_SCALE)
+}
+
+fn format_price(price: Option<u64>) -> String {
+    price
+        .map(format_ticks)
+        .unwrap_or_else(|| "MARKET".to_string())
+}
 
 #[tokio::main]
 async fn main() {
@@ -43,13 +54,24 @@ async fn main() {
                 // Tenta desserializar a ordem do JSON
                 match serde_json::from_str::<Order>(payload) {
                     Ok(order) => {
-                        log::info!(">>> NEW ORDER: {} {} {} @ {:?}", order.side, order.quantity, order.symbol, order.price);
+                        log::info!(
+                            ">>> NEW ORDER: {} {} {} @ {}",
+                            order.side,
+                            format_ticks(order.quantity),
+                            order.symbol,
+                            format_price(order.price)
+                        );
                         
                         let outcome = engine.submit(order);
                         
                         // Log dos trades resultantes
                         for trade in outcome.trades {
-                            log::info!("    MATCH FOUND: {} {} @ {}", trade.symbol, trade.quantity, trade.price);
+                            log::info!(
+                                "    MATCH FOUND: {} {} @ {}",
+                                trade.symbol,
+                                format_ticks(trade.quantity),
+                                format_ticks(trade.price)
+                            );
                             log::info!("    (Buy: {} | Sell: {})", trade.buy_order_id, trade.sell_order_id);
                         }
                         
@@ -60,16 +82,6 @@ async fn main() {
                     }
                 }
             }
-        }
-    }
-}
-
-// Implementar Display para facilitar os logs
-impl std::fmt::Display for matching_engine::domain::OrderSide {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Buy => write!(f, "BUY"),
-            Self::Sell => write!(f, "SELL"),
         }
     }
 }

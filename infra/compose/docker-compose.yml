@@ -46,6 +46,7 @@ services:
     image: confluentinc/cp-kafka:7.6.0
     ports:
       - "9092:9092"
+      - "29092:29092"
     depends_on:
       zookeeper:
         condition: service_healthy
@@ -143,6 +144,11 @@ services:
       dockerfile: infra/docker/matching-engine.Dockerfile
     ports:
       - "7000:7000"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
 
   realtime-gateway:
     build:

@@ -1,24 +1,33 @@
 @echo off
 echo =====================================================
-echo Iniciando servicos da Exchange Platform (Windows Terminal)
+echo Iniciando serviços da Exchange Platform localmente
 echo =====================================================
+echo.
+echo Isso ira abrir uma nova janela preta (CMD) para cada serviço separadamente.
 echo.
 
 echo [C#] Restaurando pacotes NuGet da Solucao...
 dotnet restore ExchangePlatform.slnx
 
 echo.
-echo Abrindo Windows Terminal com 6 abas...
+echo Iniciando Gateway API (C#)...
+start "Gateway API (C#)" cmd /k "dotnet run --project apps\gateway-api\src\Exchange.Gateway.Api"
 
-wt -d "%CD%" --title "Gateway API" cmd /k "dotnet run --project apps\gateway-api\src\Exchange.Gateway.Api" ; ^
-new-tab -d "%CD%" --title "Query API" cmd /k "dotnet run --project apps\query-api\src\Exchange.Query.Api" ; ^
-new-tab -d "%CD%" --title "Ledger Service" cmd /k "dotnet run --project apps\ledger-service\src\Exchange.Ledger.Api" ; ^
-new-tab -d "%CD%\apps\matching-engine" --title "Matching Engine" cmd /k "cargo run --bin matching-engine-service" ; ^
-new-tab -d "%CD%\apps\realtime-gateway" --title "Realtime Gateway" cmd /k "mix deps.get && mix phx.server" ; ^
-new-tab -d "%CD%\apps\frontend" --title "Frontend" cmd /k "npm install && npm run dev"
+echo Iniciando Query API (C#)...
+start "Query API (C#)" cmd /k "dotnet run --project apps\query-api\src\Exchange.Query.Api"
+
+echo Iniciando Ledger Service (C#)...
+start "Ledger Service (C#)" cmd /k "dotnet run --project apps\ledger-service\src\Exchange.Ledger.Api"
+
+echo Iniciando Matching Engine (Rust)...
+start "Matching Engine (Rust)" cmd /k "cd apps\matching-engine && cargo run --bin matching-engine-service"
+
+echo Iniciando Realtime Gateway (Elixir)...
+start "Realtime Gateway (Elixir)" cmd /k "cd apps\realtime-gateway && mix deps.get && mix phx.server"
 
 echo.
 echo =====================================================
-echo Tudo pronto! O Frontend abrira em http://localhost:3000
+echo Todos os serviços estao iniciando em novas janelas!1
+echo Feche as janelas individuais para parar cada servico.
 echo =====================================================
 pause

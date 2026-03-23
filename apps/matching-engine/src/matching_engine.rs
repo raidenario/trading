@@ -18,7 +18,7 @@ impl MatchingEngine {
     pub fn submit(&mut self, order: Order) -> MatchOutcome {
         self.order_sequence += 1;
         let symbol = order.symbol.clone();
-        let sequenced_order = order.with_sequence(self.order_sequence);
+        let sequenced_order = order.prepare_for_matching(self.order_sequence);
         let book = self
             .books
             .entry(symbol.clone())
@@ -111,5 +111,48 @@ mod tests {
         assert_eq!(result.trades[1].sell_order_id, "sell-2");
         assert_eq!(result.trades[1].quantity, 2);
         assert_eq!(result.snapshot.asks[0].quantity, 3);
+    }
+
+    #[test]
+    fn matches_orders_from_kafka_payload_shape() {
+        let mut engine = MatchingEngine::new();
+
+        let sell_payload = r#"{
+            "OrderId":"sell-1",
+            "AccountId":"acct-sell",
+            "Symbol":"BTC-USD",
+            "Side":2,
+            "Type":1,
+            "Quantity":0.5000,
+            "Price":50019.18,
+            "TimeInForce":1,
+            "ClientOrderId":"sim-sell",
+            "SubmittedAt":"2026-03-23T15:11:49.11788+00:00",
+            "SchemaVersion":1
+        }"#;
+
+        let buy_payload = r#"{
+            "OrderId":"buy-1",
+            "AccountId":"acct-buy",
+            "Symbol":"BTC-USD",
+            "Side":1,
+            "Type":1,
+            "Quantity":0.2500,
+            "Price":50019.18,
+            "TimeInForce":1,
+            "ClientOrderId":"sim-buy",
+            "SubmittedAt":"2026-03-23T15:11:59.637268+00:00",
+            "SchemaVersion":1
+        }"#;
+
+        let first = engine.submit(serde_json::from_str(sell_payload).expect("sell payload"));
+        let second = engine.submit(serde_json::from_str(buy_payload).expect("buy payload"));
+
+        assert_eq!(first.order.status, OrderStatus::Accepted);
+        assert_eq!(second.trades.len(), 1);
+        assert_eq!(second.trades[0].quantity, 2_500);
+        assert_eq!(second.trades[0].price, 500_191_800);
+        assert_eq!(second.order.status, OrderStatus::Filled);
+        assert_eq!(second.snapshot.asks[0].quantity, 2_500);
     }
 }

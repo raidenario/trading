@@ -1,4 +1,4 @@
-# Exchange Platform — Diagramas de Arquitetura
+# Exchange Platform - Diagramas de Arquitetura
 
 Este documento contém diagramas Mermaid representando os principais aspectos da plataforma.
 
@@ -7,7 +7,7 @@ Este documento contém diagramas Mermaid representando os principais aspectos da
 ## 1. Visão Geral dos Serviços
 
 ```mermaid
-graph TB
+flowchart TB
     subgraph Frontend
         FE["Frontend React/TS :3000"]
     end
@@ -40,22 +40,30 @@ graph TB
     FE -->|REST| QA
     FE -->|WebSocket| RT
 
-    GW -->|Commands| KF
+    TL -->|REST| GW
+
     GW --> PG
     GW --> RD
+    GW -->|account-events| KF
+    GW -->|order-commands| KF
 
     KF -->|order-commands| ME
     ME -->|matching-events| KF
+    ME -->|marketdata-events| KF
 
+    KF -->|account-events| LS
+    KF -->|account-events| QA
     KF -->|matching-events| LS
-    KF -->|matching-events| QA
-    KF -->|marketdata-events| RT
-
     LS --> PG
+    LS -->|ledger-events| KF
+
+    KF -->|matching-events| QA
+    KF -->|ledger-events| QA
+    KF -->|marketdata-events| QA
     QA --> PG
     QA --> RD
 
-    TL -->|REST| GW
+    KF -->|matching-events / marketdata-events| RT
 ```
 
 ---
@@ -71,21 +79,29 @@ sequenceDiagram
     participant KF as Kafka
     participant ME as Matching Engine
     participant LS as Ledger Service
+    participant QA as Query API
     participant RT as Realtime Gateway
 
     User->>FE: Submete ordem de compra
     FE->>GW: POST /api/orders
-    GW->>GW: Valida conta e saldo
-    GW->>PG: Persiste ordem (Pending)
-    GW->>KF: Publica em order-commands
-    KF->>ME: Consome comando
-    ME->>ME: Processa order book (FIFO)
-    ME->>KF: Publica TradeExecuted + BookUpdated
-    KF->>LS: Consome TradeExecuted
-    LS->>PG: Atualiza saldos
-    KF->>RT: Consome marketdata-events
+    GW->>GW: Valida conta, payload e risco pré-trade
+    GW->>PG: Persiste ordem aceita/pendente
+    GW->>KF: Publica CreateOrder em order-commands
+    KF->>ME: Entrega comando
+    ME->>ME: Processa order book FIFO em memória
+    ME->>KF: Publica matching-events
+    ME->>KF: Publica marketdata-events
+    KF->>LS: Entrega TradeExecuted / OrderFilled
+    LS->>PG: Atualiza available e reserved
+    LS->>KF: Publica ledger-events
+    KF->>QA: Entrega matching-events
+    KF->>QA: Entrega ledger-events
+    KF->>QA: Entrega marketdata-events
+    QA->>PG: Atualiza projeções de leitura
+    QA->>QA: Atualiza cache em Redis
+    KF->>RT: Entrega eventos realtime
     RT->>FE: Broadcast via WebSocket
-    FE->>User: Atualiza ticker e trades
+    FE->>User: Atualiza livro, trades e saldo
 ```
 
 ---
@@ -94,24 +110,39 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
+    CMD["Comando CreateOrder"] --> GW["Gateway API"]
+    GW -->|order-commands| KF1["Kafka"]
+
     subgraph "Matching Engine (Rust)"
-        OB["Order Book"]
-        MA["Match Algorithm"]
+        OB["Order Book em memória"]
+        MA["Algoritmo FIFO"]
     end
 
-    subgraph "Ledger (C#)"
-        BA["Balance Check"]
-        RE["Reserve Funds"]
-        SE["Settle Trade"]
+    subgraph "Ledger Service (C#)"
+        ST["Settlement"]
+        BL["Atualização de saldos"]
+        LE["Publicação de ledger-events"]
     end
 
-    Order["Nova Ordem"] --> BA
-    BA -->|Saldo OK| RE
-    RE -->|Fundos Reservados| OB
+    subgraph "Read Side (C#)"
+        PR["Projeções de leitura"]
+        CS["Cache / consultas"]
+    end
+
+    KF1 --> ME["Consumer de comandos"]
+    ME --> OB
     OB --> MA
-    MA -->|Trade Executado| SE
-    SE -->|Credita ativo| Balance["Saldo Atualizado"]
-    MA -->|Sem match| Rest["Ordem no Book"]
+    MA -->|matching-events| KF2["Kafka"]
+
+    KF2 --> ST
+    ST --> BL
+    BL --> PG["PostgreSQL"]
+    BL --> LE
+    LE -->|ledger-events| KF3["Kafka"]
+
+    KF2 --> PR
+    KF3 --> PR
+    PR --> CS
 ```
 
 ---
@@ -120,23 +151,22 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    ME["Matching Engine"] -->|TradeExecuted| KF["Kafka: marketdata-events"]
-    ME -->|BookUpdated| KF
-    ME -->|TickerUpdated| KF
+    ME["Matching Engine"] -->|matching-events| KF["Kafka"]
+    ME -->|marketdata-events| KF
 
-    KF --> RT["Realtime Gateway (Elixir)"]
-    KF --> QA["Query API"]
+    KF -->|matching-events / marketdata-events| RT["Realtime Gateway (Elixir)"]
+    KF -->|matching-events / marketdata-events| QA["Query API"]
 
     RT -->|Phoenix Channel| WS1["market:BTC-USD"]
     RT -->|Phoenix Channel| WS2["market:ETH-USD"]
     RT -->|Phoenix Channel| WS3["market:SOL-USD"]
 
-    WS1 --> FE["Frontend WebSocket"]
+    WS1 --> FE["Frontend"]
     WS2 --> FE
     WS3 --> FE
 
-    QA -->|Cache| RD["Redis"]
-    QA -->|Read Models| PG["PostgreSQL"]
+    QA -->|Read models| PG["PostgreSQL"]
+    QA -->|Hot cache| RD["Redis"]
 ```
 
 ---
@@ -144,41 +174,42 @@ flowchart TB
 ## 5. Separação por Linguagem e Responsabilidade
 
 ```mermaid
-graph LR
+flowchart LR
     subgraph "C# / .NET"
         direction TB
         A1["APIs REST"]
-        A2["Dominio de Ordens"]
-        A3["Contas e Saldos"]
-        A4["Ledger Contabil"]
-        A5["Contratos e Eventos"]
-        A6["Integracao com Infra"]
+        A2["Domínio de ordens"]
+        A3["Contas e saldos"]
+        A4["Ledger contábil"]
+        A5["Contratos e eventos"]
+        A6["Integração com PostgreSQL / Redis / Kafka"]
     end
 
-    subgraph "Rust"
+    subgraph Rust
         direction TB
-        B1["Order Book em Memoria"]
+        B1["Order book em memória"]
         B2["Algoritmo FIFO"]
-        B3["Matching de Trades"]
-        B4["Geracao de Eventos"]
+        B3["Matching de trades"]
+        B4["Emissão de matching-events e marketdata-events"]
     end
 
-    subgraph "Elixir"
+    subgraph Elixir
         direction TB
-        C1["WebSocket Channels"]
-        C2["Broadcast por Simbolo"]
-        C3["Fanout de Eventos"]
+        C1["Phoenix Channels"]
+        C2["Fanout por símbolo"]
+        C3["Broadcast realtime"]
     end
 
-    subgraph "Python"
+    subgraph Python
         direction TB
-        D1["Simulador de Mercado GBM"]
-        D2["Gerador de Ordens"]
-        D3["Load Testing"]
-        D4["Replay de Cenarios"]
+        D1["Simulador de mercado GBM"]
+        D2["Gerador de ordens"]
+        D3["Load testing"]
+        D4["Replay de cenários"]
     end
 
-    A1 --> B1
-    B4 --> C1
     D2 --> A1
+    A2 --> B1
+    B3 --> A4
+    B4 --> C1
 ```

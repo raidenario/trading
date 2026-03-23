@@ -11,8 +11,8 @@ public static class DependencyInjection
     public static IServiceCollection AddTradingInfrastructure(this IServiceCollection services)
     {
         services.AddSingleton<IOrderRepository, InMemoryOrderRepository>();
-        services.AddSingleton<IMatchingEngineClient, StubMatchingEngineClient>();
-        services.AddSingleton<IIntegrationEventPublisher, InMemoryIntegrationEventPublisher>();
+        services.AddSingleton<IMatchingEngineClient, KafkaMatchingEngineClient>();
+        services.AddSingleton<IIntegrationEventPublisher, KafkaIntegrationEventPublisher>();
         return services;
     }
 }
