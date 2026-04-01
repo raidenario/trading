@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Confluent.Kafka;
 using Exchange.Platform.Contracts.Commands;
+using Exchange.Platform.Contracts.Messaging;
 using Exchange.Trading.Application.Abstractions;
 using Exchange.Trading.Application.Models;
 using Exchange.Trading.Domain.Entities;
@@ -14,7 +15,6 @@ public sealed class KafkaMatchingEngineClient : IMatchingEngineClient, IDisposab
 {
     private readonly IProducer<string, string> _producer;
     private readonly ILogger<KafkaMatchingEngineClient> _logger;
-    private const string Topic = "order-commands";
 
     public KafkaMatchingEngineClient(IConfiguration configuration, ILogger<KafkaMatchingEngineClient> logger)
     {
@@ -58,8 +58,8 @@ public sealed class KafkaMatchingEngineClient : IMatchingEngineClient, IDisposab
 
             _logger.LogInformation("Order command published to Kafka for OrderId: {OrderId}", order.OrderId);
 
-            // Na arquitetura assíncrona, retornamos apenas que a ordem foi aceita para processamento
-            return new OrderSubmissionResult(true, DomainOrderStatus.Accepted, Array.Empty<Trade>(), null, null);
+            // Na arquitetura assíncrona, a API só confirma enfileiramento.
+            return new OrderSubmissionResult(true, DomainOrderStatus.Pending, Array.Empty<Trade>(), null, null);
         }
         catch (ProduceException<string, string> e)
         {
@@ -95,4 +95,6 @@ public sealed class KafkaMatchingEngineClient : IMatchingEngineClient, IDisposab
         _producer.Flush(TimeSpan.FromSeconds(10));
         _producer.Dispose();
     }
+
+    private const string Topic = KafkaTopics.OrderCommands;
 }

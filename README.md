@@ -35,6 +35,7 @@ Este projeto demonstra a construção de um sistema financeiro completo usando a
    │              │    │ Engine  │────┘                      │
    │ order-cmds   │───▶│ (Rust)  │                          │
    │ matching-evts│    │  :7000  │                          │
+   │ ledger-evts  │◀───│         │                          │
    └──────┬───────┘    └─────────┘                          │
           │                                                  │
    ┌──────▼──────┐  ┌──────────────┐                        │
@@ -58,8 +59,8 @@ Para diagramas detalhados em Mermaid, veja [architecture-diagrams.md](libs/docs/
 | Serviço | Porta Docker | Porta Local | Descrição |
 |---------|-------------|-------------|-----------|
 | `gateway-api` | 8080 | 5103 | Criação de contas, funding, ordens |
-| `query-api` | 8081 | 5267 | Histórico, ticker, trades, market overview |
-| `ledger-service` | 8082 | 5075 | Saldos e extrato contábil |
+| `query-api` | 8081 | 5267 | Read model reativo: histórico, ticker, trades, market overview |
+| `ledger-service` | 8082 | 5075 | Projeção contábil e emissor de `ledger-events` |
 | `matching-engine` | 7000 | 7000 | Order book e matching FIFO |
 | `realtime-gateway` | 4000 | 4000 | WebSocket por símbolo |
 | `frontend` | 3000 | 3000 | Dashboard e trading |
@@ -180,17 +181,27 @@ tests/
 | Tópico | Descrição |
 |--------|-----------|
 | `order-commands` | Comandos de criação e cancelamento de ordens |
-| `matching-events` | Trades executados e atualizações do book |
-| `ledger-events` | Mudanças de saldo e reservas |
-| `marketdata-events` | Ticker e candle updates |
+| `matching-events` | Aceite/rejeição de ordens e trades executados |
+| `ledger-events` | Deltas de saldo/reserva emitidos pelo ledger |
+| `marketdata-events` | Book e ticker updates |
 | `account-events` | Criação de conta e funding |
+
+## Recuperação do Kafka
+
+Se aparecer erro de `different ClusterID`, `Unknown topic or partition` ou o producer parar de publicar, execute:
+
+```bash
+reset-kafka.bat
+```
+
+O script agora remove os volumes nomeados de `kafka` e `zookeeper`, sobe o broker limpo e recria os tópicos obrigatórios.
 
 ---
 
 ## Próximos Passos
 
-- [ ] Integração real Gateway → Matching Engine via gRPC ou Kafka
-- [ ] Write model com outbox pattern e projections persistentes
+- [ ] Persistir projections e ledger em PostgreSQL em vez de memória local
+- [ ] Outbox/inbox pattern para idempotência entre serviços
 - [ ] Validação de risco pré-trade e ledger assíncrono pós-trade
 - [ ] Market data incremental (ticker/candles) via Redis Streams
 - [ ] Observabilidade (OpenTelemetry, Prometheus, Grafana)

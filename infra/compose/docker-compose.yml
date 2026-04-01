@@ -1,3 +1,5 @@
+name: projtrading
+
 services:
 
   # =====================================================
@@ -33,6 +35,9 @@ services:
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -44,6 +49,8 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
+    volumes:
+      - kafka-data:/var/lib/kafka/data
     ports:
       - "9092:9092"
       - "29092:29092"
@@ -59,6 +66,7 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
     healthcheck:
       test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
       interval: 10s
@@ -122,6 +130,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
 
   ledger-service:
     build:
@@ -137,6 +147,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
 
   matching-engine:
     build:
@@ -165,6 +177,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
 
 
   frontend:
@@ -180,3 +194,6 @@ services:
 
 volumes:
   pgdata:
+  kafka-data:
+  zookeeper-data:
+  zookeeper-log:

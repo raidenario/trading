@@ -6,54 +6,14 @@ from multiple simulated accounts across configured markets.
 """
 from __future__ import annotations
 
-import random
 import time
-from datetime import UTC, datetime
-from uuid import uuid4
 
 import httpx
 from rich.console import Console
-from rich.table import Table
+
+from .generators import OrderGenerator, PARTICIPANTS, REFERENCE_PRICES
 
 console = Console()
-
-DEMO_ACCOUNTS = [
-    "11111111-1111-1111-1111-111111111111",
-    "22222222-2222-2222-2222-222222222222",
-    "33333333-3333-3333-3333-333333333333",
-]
-
-
-def generate_order_payload(
-    symbol: str = "BTC-USD",
-    reference_price: float = 50_000.0,
-) -> dict:
-    side = random.choice(["Buy", "Sell"])
-    spread_pct = random.uniform(-0.005, 0.005)
-    price = round(reference_price * (1 + spread_pct), 2)
-    quantity = round(random.uniform(0.01, 1.5), 4)
-
-    return {
-        "orderId": str(uuid4()),
-        "accountId": random.choice(DEMO_ACCOUNTS),
-        "symbol": symbol,
-        "side": side,
-        "type": "Limit",
-        "quantity": quantity,
-        "price": price,
-        "timeInForce": "Gtc",
-        "clientOrderId": f"sim-{uuid4().hex[:8]}",
-        "submittedAt": datetime.now(UTC).isoformat(),
-        "schemaVersion": 1,
-    }
-
-
-MARKET_PRICES = {
-    "BTC-USD": 50_000.0,
-    "ETH-USD": 3_500.0,
-    "SOL-USD": 125.0,
-}
-
 
 def run_order_flow(
     endpoint: str = "http://localhost:5103",
@@ -72,9 +32,11 @@ def run_order_flow(
         count: Total orders to send (None = infinite).
         dry_run: If True, print orders without sending.
     """
-    symbols = symbols or list(MARKET_PRICES.keys())
+    symbols = symbols or list(REFERENCE_PRICES.keys())
     interval = 1.0 / rate if rate > 0 else 1.0
     sent = 0
+    generator = OrderGenerator(symbols=tuple(symbols))
+    account_map = {participant.account_id: participant.name for participant in PARTICIPANTS}
 
     console.print(f"[bold green]Order Flow Generator[/bold green]")
     console.print(f"  Endpoint: {endpoint}")
@@ -82,32 +44,39 @@ def run_order_flow(
     console.print(f"  Rate:     {rate} orders/sec")
     console.print(f"  Count:    {'infinite' if count is None else count}")
     console.print(f"  Dry Run:  {dry_run}")
+    console.print(f"  Accounts: {', '.join(f'{p.name}={p.account_id[:8]}' for p in PARTICIPANTS)}")
     console.print()
 
     client = httpx.Client(timeout=10.0) if not dry_run else None
 
     try:
         while count is None or sent < count:
-            symbol = random.choice(symbols)
-            ref_price = MARKET_PRICES.get(symbol, 100.0)
-            payload = generate_order_payload(symbol, ref_price)
+            for order in generator.next_crossing_pair():
+                if count is not None and sent >= count:
+                    break
 
-            if dry_run:
-                console.print(f"[dim]{sent+1:>5}[/dim] [cyan]{payload['side']:>4}[/cyan] "
-                              f"{payload['quantity']:>8.4f} {symbol} @ {payload['price']:>12.2f} "
-                              f"[dim](account {payload['accountId'][:8]}...)[/dim]")
-            else:
-                try:
-                    resp = client.post(f"{endpoint}/api/orders", json=payload)  # type: ignore
-                    status_icon = "[green]OK[/green]" if resp.status_code < 400 else f"[red]{resp.status_code}[/red]"
-                    console.print(f"[dim]{sent+1:>5}[/dim] {status_icon} "
-                                  f"[cyan]{payload['side']:>4}[/cyan] "
-                                  f"{payload['quantity']:>8.4f} {symbol} @ {payload['price']:>12.2f}")
-                except httpx.RequestError as e:
-                    console.print(f"[red]ERROR[/red] {e}")
+                payload = order.to_payload()
+                owner = account_map.get(payload["accountId"], str(payload["accountId"])[:8])
 
-            sent += 1
-            time.sleep(interval)
+                if dry_run:
+                    console.print(
+                        f"[dim]{sent+1:>5}[/dim] [cyan]{payload['side']:>4}[/cyan] "
+                        f"{payload['quantity']:>8.4f} {payload['symbol']} @ {payload['price']:>12.2f} "
+                        f"[dim]({owner} {str(payload['accountId'])[:8]}...)[/dim]")
+                else:
+                    try:
+                        resp = client.post(f"{endpoint}/api/orders", json=payload)  # type: ignore
+                        status_icon = "[green]OK[/green]" if resp.status_code < 400 else f"[red]{resp.status_code}[/red]"
+                        console.print(
+                            f"[dim]{sent+1:>5}[/dim] {status_icon} "
+                            f"[cyan]{payload['side']:>4}[/cyan] "
+                            f"{payload['quantity']:>8.4f} {payload['symbol']} @ {payload['price']:>12.2f} "
+                            f"[dim]({owner})[/dim]")
+                    except httpx.RequestError as e:
+                        console.print(f"[red]ERROR[/red] {e}")
+
+                sent += 1
+                time.sleep(interval)
 
     except KeyboardInterrupt:
         console.print(f"\n[yellow]Stopped after {sent} orders.[/yellow]")

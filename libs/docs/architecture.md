@@ -56,8 +56,8 @@ A motivação é criar um projeto de portfólio que reflita decisões arquitetur
 └─────────────┘     └──────────────────┘     └─────────────────┘
 ```
 
-- **Write Side**: `gateway-api` recebe comandos, valida e encaminha. O `matching-engine` processa. O `ledger-service` atualiza saldos.
-- **Read Side**: `query-api` serve projeções otimizadas para leitura (histórico, tickers, candles). Redis mantém caches quentes.
+- **Write Side**: `gateway-api` recebe comandos, valida e publica em `order-commands`. O `matching-engine` processa e emite `matching-events` e `marketdata-events`. O `ledger-service` consome `account-events`, `order-commands` e `matching-events` para projetar saldos e emitir `ledger-events`.
+- **Read Side**: `query-api` consome `order-commands`, `matching-events`, `ledger-events` e `marketdata-events` para servir histórico, ticker, trades e balances sem depender de chamadas síncronas ao ledger.
 
 ---
 
@@ -66,9 +66,9 @@ A motivação é criar um projeto de portfólio que reflita decisões arquitetur
 | Tópico | Produtor | Consumidor(es) | Conteúdo |
 |--------|----------|----------------|----------|
 | `order-commands` | gateway-api | matching-engine | Comandos de criação/cancelamento de ordens |
-| `matching-events` | matching-engine | ledger, query, realtime | Trades executados, book atualizado |
-| `ledger-events` | ledger-service | query-api | Mudanças de saldo, reservas |
-| `marketdata-events` | matching-engine | realtime-gateway, query-api | Ticker, candles |
+| `matching-events` | matching-engine | ledger, query | Aceite/rejeição de ordens e trades executados |
+| `ledger-events` | ledger-service | query-api | Deltas de saldo e liberações de reserva |
+| `marketdata-events` | matching-engine | realtime-gateway, query-api | Book e ticker updates |
 | `account-events` | gateway-api | ledger, query | Criação de conta, funding |
 
 ---
@@ -77,10 +77,10 @@ A motivação é criar um projeto de portfólio que reflita decisões arquitetur
 
 1. **Conta criada** → `gateway-api` → evento `AccountCreated` → PostgreSQL + Kafka
 2. **Funding** → `gateway-api` → saldo atualizado → evento `AccountFunded`
-3. **Ordem enviada** → `gateway-api` valida conta, saldo, payload → `order-commands` (Kafka)
-4. **Matching** → Rust consome, processa order book em memória → gera `TradeExecuted`, `BookUpdated`
-5. **Settlement** → `ledger-service` atualiza saldos (disponível/reservado)
-6. **Projeções** → `query-api` recebe eventos e atualiza modelos de leitura
+3. **Ordem enviada** → `gateway-api` valida payload e publica em `order-commands`
+4. **Matching** → Rust consome, processa order book em memória e gera `OrderAccepted` / `OrderRejected`, `TradeExecuted`, `BookUpdated`, `TickerUpdated`
+5. **Settlement** → `ledger-service` reserva saldo a partir de `order-commands`, liquida trades a partir de `matching-events` e publica `ledger-events`
+6. **Projeções** → `query-api` recebe comandos/eventos e atualiza modelos de leitura
 7. **Realtime** → Elixir recebe eventos de market data e distribui via WebSocket
 8. **Frontend** → consome REST + WebSocket para exibir dados ao usuário
 

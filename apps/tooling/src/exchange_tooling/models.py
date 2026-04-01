@@ -28,6 +28,7 @@ class OrderRequest:
         price: float | None,
         order_type: str = "Limit",
         time_in_force: str = "Gtc",
+        client_order_suffix: str | None = None,
     ) -> "OrderRequest":
         return cls(
             order_id=str(uuid4()),
@@ -39,6 +40,7 @@ class OrderRequest:
             price=price,
             time_in_force=time_in_force,
             submitted_at=datetime.now(UTC).isoformat(),
+            client_order_id=f"sim-{client_order_suffix}-{uuid4().hex[:6]}" if client_order_suffix else f"sim-{uuid4().hex[:8]}",
         )
 
     def to_payload(self) -> dict[str, object]:

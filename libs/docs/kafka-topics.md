@@ -37,23 +37,23 @@ Este documento detalha os tópicos Kafka usados na plataforma e o papel de cada 
 ### `matching-events` (3 partições)
 
 - **Produtor:** `matching-engine`
-- **Consumidores:** `ledger-service`, `query-api`, `realtime-gateway`
-- **Conteúdo:** Resultados do matching — trades executados e atualizações do book
-- **Eventos:** `TradeExecuted`, `BookUpdated`, `OrderFilled`, `OrderPartiallyFilled`
+- **Consumidores:** `ledger-service`, `query-api`
+- **Conteúdo:** Resultados de domínio do matching
+- **Eventos:** `OrderAccepted`, `OrderRejected`, `TradeExecuted`
 
 ### `ledger-events` (3 partições)
 
 - **Produtor:** `ledger-service`
 - **Consumidores:** `query-api`
-- **Conteúdo:** Mudanças de saldo, reservas de fundos, settlements
-- **Eventos:** `FundsReserved`, `AccountFunded`
+- **Conteúdo:** Deltas de saldo e reserva derivados do ledger
+- **Eventos:** `BalanceAdjusted`
 
 ### `marketdata-events` (3 partições)
 
 - **Produtor:** `matching-engine`
 - **Consumidores:** `realtime-gateway`, `query-api`
-- **Conteúdo:** Atualizações de preço e dados de mercado
-- **Eventos:** `TickerUpdated`, `CandleUpdated`
+- **Conteúdo:** Atualizações de book e preço
+- **Eventos:** `BookUpdated`, `TickerUpdated`
 
 ### `account-events` (2 partições)
 

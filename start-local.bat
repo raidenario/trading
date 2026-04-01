@@ -6,6 +6,9 @@ echo.
 echo Isso ira abrir uma nova janela preta (CMD) para cada serviço separadamente.
 echo.
 
+echo [Infra] Garantindo PostgreSQL, Redis, Kafka e topicos...
+docker compose -f infra/compose/docker-compose.yml up postgres redis zookeeper kafka kafka-init -d
+
 echo [C#] Restaurando pacotes NuGet da Solucao...
 dotnet restore ExchangePlatform.slnx
 

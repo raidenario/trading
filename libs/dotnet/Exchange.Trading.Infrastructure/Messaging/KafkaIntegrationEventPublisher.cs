@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Confluent.Kafka;
+using Exchange.Platform.Contracts.Messaging;
 using Exchange.Trading.Application.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -29,7 +30,11 @@ public sealed class KafkaIntegrationEventPublisher : IIntegrationEventPublisher,
     public async Task PublishAsync<TMessage>(string topic, TMessage message, CancellationToken cancellationToken)
         where TMessage : class
     {
-        var payload = JsonSerializer.Serialize(message);
+        var envelope = new IntegrationEventEnvelope<TMessage>(
+            message.GetType().Name,
+            message,
+            DateTimeOffset.UtcNow);
+        var payload = JsonSerializer.Serialize(envelope);
         
         try
         {

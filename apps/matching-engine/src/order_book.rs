@@ -206,6 +206,8 @@ impl OrderBook {
                         symbol: incoming.symbol.clone(),
                         buy_order_id: incoming.id.clone(),
                         sell_order_id: resting.id.clone(),
+                        buy_account_id: incoming.account_id.clone(),
+                        sell_account_id: resting.account_id.clone(),
                         price: best_ask_price,
                         quantity: fill_quantity,
                     });
@@ -265,6 +267,8 @@ impl OrderBook {
                         symbol: incoming.symbol.clone(),
                         buy_order_id: resting.id.clone(),
                         sell_order_id: incoming.id.clone(),
+                        buy_account_id: resting.account_id.clone(),
+                        sell_account_id: incoming.account_id.clone(),
                         price: best_bid_price,
                         quantity: fill_quantity,
                     });

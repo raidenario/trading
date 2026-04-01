@@ -1,9 +1,11 @@
 namespace Exchange.Platform.Contracts.Events;
 
 public sealed record TradeExecuted(
-    Guid TradeId,
+    string TradeId,
     Guid BuyOrderId,
     Guid SellOrderId,
+    Guid BuyAccountId,
+    Guid SellAccountId,
     string Symbol,
     decimal Price,
     decimal Quantity,

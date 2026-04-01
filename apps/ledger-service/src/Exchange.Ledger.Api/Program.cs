@@ -1,6 +1,5 @@
+using System.Text.Json.Serialization;
 using Exchange.Ledger.Domain.Entities;
-using Exchange.Ledger.Domain.Enums;
-using Exchange.Platform.Contracts.ReadModels;
 
 namespace Exchange.Ledger.Api;
 
@@ -9,6 +8,13 @@ public class Program
     public static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
+        builder.Services.ConfigureHttpJsonOptions(options =>
+        {
+            options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        });
+        builder.Services.AddSingleton<LedgerProjectionStore>();
+        builder.Services.AddSingleton<LedgerEventPublisher>();
+        builder.Services.AddHostedService<KafkaLedgerConsumer>();
         builder.Services.AddCors(options =>
         {
             options.AddDefaultPolicy(policy =>
@@ -25,34 +31,14 @@ public class Program
             utcNow = DateTimeOffset.UtcNow
         }));
 
-        app.MapGet("/api/ledger/accounts/{accountId:guid}", (Guid accountId) =>
+        app.MapGet("/api/ledger/accounts/{accountId:guid}", (Guid accountId, LedgerProjectionStore store) =>
         {
-            var account = new LedgerAccount(
-                accountId,
-                new[]
-                {
-                    new LedgerBalance("USD", 25000m, 2500m),
-                    new LedgerBalance("BTC", 1.25m, 0.15m)
-                },
-                new[]
-                {
-                    new LedgerEntry(Guid.NewGuid(), accountId, "USD", -1250m, LedgerEntryType.Hold, "order:hold", DateTimeOffset.UtcNow.AddMinutes(-5)),
-                    new LedgerEntry(Guid.NewGuid(), accountId, "BTC", 0.15m, LedgerEntryType.TradeSettlement, "trade:settlement", DateTimeOffset.UtcNow.AddMinutes(-1))
-                });
-
-            return Results.Ok(account);
+            var account = store.GetAccount(accountId);
+            return account is null ? Results.NotFound() : Results.Ok(account);
         });
 
-        app.MapGet("/api/ledger/accounts/{accountId:guid}/balances", (Guid accountId) =>
-        {
-            var balances = new[]
-            {
-                new BalanceSnapshot(accountId, "USD", 25000m, 2500m, DateTimeOffset.UtcNow),
-                new BalanceSnapshot(accountId, "BTC", 1.25m, 0.15m, DateTimeOffset.UtcNow)
-            };
-
-            return Results.Ok(balances);
-        });
+        app.MapGet("/api/ledger/accounts/{accountId:guid}/balances", (Guid accountId, LedgerProjectionStore store) =>
+            Results.Ok(store.GetBalances(accountId)));
 
         app.Run();
     }
