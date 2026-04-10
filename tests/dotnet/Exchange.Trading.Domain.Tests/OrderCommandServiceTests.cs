@@ -94,7 +94,7 @@ public sealed class OrderCommandServiceTests
             "PETR4",
             OrderSide.Buy,
             OrderType.Limit,
-            50m,
+            150m,
             37.10m,
             TimeInForce.Gtc,
             null,
@@ -103,8 +103,48 @@ public sealed class OrderCommandServiceTests
         var result = await service.CreateAsync(command, CancellationToken.None);
 
         Assert.Equal(DomainOrderStatus.Rejected, result.Status);
-        Assert.Contains("minimum", result.RejectionReason!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("lot", result.RejectionReason!, StringComparison.OrdinalIgnoreCase);
         Assert.Null(matchingClient.SubmittedOrder);
+    }
+
+    [Fact]
+    public async Task CreateAsync_enriches_execution_instructions_from_instrument_runtime_definition()
+    {
+        var repository = new InMemoryOrderRepository();
+        var matchingClient = new CapturingMatchingEngineClient();
+        var service = new OrderCommandService(
+            repository,
+            matchingClient,
+            new StaticInstrumentCatalog(
+                DemoSeed.Instruments,
+                DemoSeed.InstrumentTradingRules,
+                DemoSeed.InstrumentMarketConfigs,
+                DemoSeed.InstrumentStatuses),
+            new DemoTradingAccountResolver(DemoSeed.TradingAccounts));
+
+        var command = new CreateOrderCommand(
+            Guid.NewGuid(),
+            DemoSeed.Accounts.First().AccountId,
+            "PETR4F",
+            OrderSide.Buy,
+            OrderType.Market,
+            1m,
+            null,
+            TimeInForce.Ioc,
+            null,
+            DateTimeOffset.Parse("2026-04-09T15:00:00Z"),
+            ExecutionInstructions: new Dictionary<string, string> { ["sourceHint"] = "test" });
+
+        await service.CreateAsync(command, CancellationToken.None);
+
+        Assert.NotNull(matchingClient.SubmittedOrder);
+        Assert.NotNull(matchingClient.SubmittedOrder!.ExecutionInstructions);
+        Assert.Equal("test", matchingClient.SubmittedOrder.ExecutionInstructions!["sourceHint"]);
+        Assert.Equal("SpotFractional", matchingClient.SubmittedOrder.ExecutionInstructions["bookProfile"]);
+        Assert.Equal("Regular", matchingClient.SubmittedOrder.ExecutionInstructions["session"]);
+        Assert.Equal("true", matchingClient.SubmittedOrder.ExecutionInstructions["matchingEnabled"]);
+        Assert.Equal("true", matchingClient.SubmittedOrder.ExecutionInstructions["separateBook"]);
+        Assert.Equal("Equity", matchingClient.SubmittedOrder.ExecutionInstructions["assetClass"]);
     }
 
     private sealed class CapturingMatchingEngineClient : IMatchingEngineClient

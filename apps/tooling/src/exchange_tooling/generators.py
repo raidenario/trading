@@ -32,6 +32,7 @@ class OrderGenerator:
     catalog: InstrumentCatalog | None = None
     symbols: tuple[str, ...] | None = None
     asset_classes: tuple[str, ...] | None = None
+    markets: tuple[str, ...] | None = None
     book_modes: tuple[str, ...] | None = None
     session: MarketSession = MarketSession.REGULAR
     _rotation: int = 0
@@ -110,6 +111,7 @@ class OrderGenerator:
         filters = self.catalog.filter(  # type: ignore[union-attr]
             symbols=self.symbols,
             asset_classes=self.asset_classes,
+            markets=self.markets,
             session=self.session,
         )
 
@@ -145,4 +147,6 @@ class OrderGenerator:
             "bookProfile": instrument.book_mode.title().replace("_", ""),
             "matchingEnabled": "true" if instrument.book_mode != "DISABLED" else "false",
             "separateBook": "true" if instrument.separate_book else "false",
+            "assetClass": instrument.asset_class,
+            "market": instrument.market,
         }

@@ -61,9 +61,9 @@ public sealed class InstrumentOrderValidator(IInstrumentCatalog instrumentCatalo
             return Invalid($"Order type {command.Type} is not allowed for instrument '{resolvedInstrument.Instrument.Symbol}'.", session, resolvedInstrument);
         }
 
-        if (!HasPrecision(command.Quantity, tradingRule.QuantityPrecision))
+        if (!IsMultipleOf(command.Quantity, tradingRule.LotSize, tradingRule.QuantityPrecision))
         {
-            return Invalid("Quantity precision is invalid for the instrument.", session, resolvedInstrument);
+            return Invalid("Quantity does not respect the configured lot size.", session, resolvedInstrument);
         }
 
         if (command.Quantity < tradingRule.MinQuantity)
@@ -76,9 +76,9 @@ public sealed class InstrumentOrderValidator(IInstrumentCatalog instrumentCatalo
             return Invalid("Quantity is above the instrument maximum.", session, resolvedInstrument);
         }
 
-        if (!IsMultipleOf(command.Quantity, tradingRule.LotSize, tradingRule.QuantityPrecision))
+        if (!HasPrecision(command.Quantity, tradingRule.QuantityPrecision))
         {
-            return Invalid("Quantity does not respect the configured lot size.", session, resolvedInstrument);
+            return Invalid("Quantity precision is invalid for the instrument.", session, resolvedInstrument);
         }
 
         if (command.Type == OrderType.Limit)
@@ -88,14 +88,14 @@ public sealed class InstrumentOrderValidator(IInstrumentCatalog instrumentCatalo
                 return Invalid("Limit orders require a price.", session, resolvedInstrument);
             }
 
-            if (!HasPrecision(command.Price.Value, tradingRule.PricePrecision))
-            {
-                return Invalid("Price precision is invalid for the instrument.", session, resolvedInstrument);
-            }
-
             if (!IsMultipleOf(command.Price.Value, tradingRule.TickSize, tradingRule.PricePrecision))
             {
                 return Invalid("Price does not respect the configured tick size.", session, resolvedInstrument);
+            }
+
+            if (!HasPrecision(command.Price.Value, tradingRule.PricePrecision))
+            {
+                return Invalid("Price precision is invalid for the instrument.", session, resolvedInstrument);
             }
         }
 

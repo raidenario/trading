@@ -20,6 +20,7 @@ def run_order_flow(
     endpoint: str = "http://localhost:5103",
     symbols: list[str] | None = None,
     asset_classes: tuple[str, ...] | None = None,
+    markets: tuple[str, ...] | None = None,
     book_modes: tuple[str, ...] | None = None,
     session: MarketSession = MarketSession.REGULAR,
     rate: float = 2.0,
@@ -44,6 +45,7 @@ def run_order_flow(
         catalog=catalog,
         symbols=selected_symbols,
         asset_classes=asset_classes,
+        markets=markets,
         book_modes=book_modes,
         session=session,
     )

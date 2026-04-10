@@ -19,6 +19,7 @@ class LoadGenerator:
         *,
         symbols: tuple[str, ...] | None = None,
         asset_classes: tuple[str, ...] | None = None,
+        markets: tuple[str, ...] | None = None,
         book_modes: tuple[str, ...] | None = None,
         session: MarketSession = MarketSession.REGULAR,
     ) -> None:
@@ -29,6 +30,7 @@ class LoadGenerator:
             catalog=InstrumentCatalog.default(),
             symbols=symbols,
             asset_classes=asset_classes,
+            markets=markets,
             book_modes=book_modes,
             session=session,
         )

@@ -18,7 +18,8 @@ import time
 from .generators import OrderGenerator
 from .instruments import InstrumentCatalog, MarketSession
 from .load_generator import LoadGenerator
-from .market_simulator import build_market_configs
+from .market_scenarios import get_market_scenario
+from .market_simulator import build_market_configs, run_market_simulation
 from .replay import replay_file
 
 
@@ -32,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     fake_order = subparsers.add_parser("fake-order", help="Emit a single fake order payload")
     fake_order.add_argument("--symbol")
     fake_order.add_argument("--asset-class", dest="asset_class")
+    fake_order.add_argument("--market")
     fake_order.add_argument("--book-mode")
     fake_order.add_argument("--session", choices=["regular", "after-market", "auction", "closed"], default="regular")
 
@@ -41,8 +43,17 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--candle-interval", type=int, default=60, help="Seconds per candle")
     simulate.add_argument("--symbols", help="Comma-separated symbols")
     simulate.add_argument("--asset-class", dest="asset_class")
+    simulate.add_argument("--market")
     simulate.add_argument("--book-mode")
     simulate.add_argument("--session", choices=["regular", "after-market", "auction", "closed"], default="regular")
+
+    simulate_market = subparsers.add_parser("simulate-market", help="Run a preset market simulation with the expanded instrument catalog")
+    simulate_market.add_argument("--scenario", choices=["expanded-market", "equities", "etf", "bdr", "fx", "crypto"], default="expanded-market")
+    simulate_market.add_argument("--endpoint", default="http://localhost:5103")
+    simulate_market.add_argument("--rate", type=float, default=2.0, help="Orders per second")
+    simulate_market.add_argument("--count", type=int, default=None, help="Total orders (default: infinite)")
+    simulate_market.add_argument("--session", choices=["regular", "after-market", "auction", "closed"], default=None)
+    simulate_market.add_argument("--dry-run", action="store_true")
 
     # flow: continuous order flow to API
     flow = subparsers.add_parser("flow", help="Send continuous fake orders to the Gateway API")
@@ -51,6 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     flow.add_argument("--count", type=int, default=None, help="Total orders (default: infinite)")
     flow.add_argument("--symbols", help="Comma-separated symbols")
     flow.add_argument("--asset-class", dest="asset_class")
+    flow.add_argument("--market")
     flow.add_argument("--book-mode")
     flow.add_argument("--session", choices=["regular", "after-market", "auction", "closed"], default="regular")
     flow.add_argument("--dry-run", action="store_true")
@@ -62,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     load.add_argument("--count", type=int, default=25)
     load.add_argument("--symbols", help="Comma-separated symbols")
     load.add_argument("--asset-class", dest="asset_class")
+    load.add_argument("--market")
     load.add_argument("--book-mode")
     load.add_argument("--session", choices=["regular", "after-market", "auction", "closed"], default="regular")
     load.add_argument("--dry-run", action="store_true")
@@ -89,6 +102,7 @@ def main() -> None:
             catalog=catalog,
             symbols=symbols,
             asset_classes=parse_csv(args.asset_class),
+            markets=parse_csv(args.market),
             book_modes=parse_csv(args.book_mode),
             session=session,
         )
@@ -96,66 +110,34 @@ def main() -> None:
         return
 
     if args.command == "simulate":
-        from .market_simulator import PriceEngine
-        from rich.console import Console
-        from rich.table import Table
-
-        console = Console()
         requested_symbols = parse_csv(args.symbols) or (legacy_symbols if not args.asset_class and not args.book_mode else None)
         configs = build_market_configs(
             symbols=requested_symbols,
             asset_classes=parse_csv(args.asset_class),
+            markets=parse_csv(args.market),
             book_mode=args.book_mode,
             session=session,
         )
-        symbols = [config.symbol for config in configs]
+        run_market_simulation(
+            configs,
+            interval=args.interval,
+            candle_interval=args.candle_interval,
+            title="Market Simulator",
+        )
+        return
 
-        engines = [PriceEngine(config=c) for c in configs]
-        candle_counter = 0
-
-        console.print("[bold green]Market Simulator[/bold green]")
-        console.print(f"  Symbols: {', '.join(symbols)}")
-        console.print(f"  Tick interval: {args.interval}s")
-        console.print(f"  Candle interval: {args.candle_interval}s")
-        console.print()
-
-        try:
-            while True:
-                table = Table(title="Live Market Data", show_header=True)
-                table.add_column("Symbol", style="cyan", width=10)
-                table.add_column("Last Price", justify="right", style="bold")
-                table.add_column("Bid", justify="right", style="green")
-                table.add_column("Ask", justify="right", style="red")
-                table.add_column("24h Change", justify="right")
-                table.add_column("Volume", justify="right")
-
-                for engine in engines:
-                    ticker = engine.tick()
-                    change_color = "green" if ticker.change_24h >= 0 else "red"
-                    table.add_row(
-                        ticker.symbol,
-                        f"{ticker.last_price:,.2f}",
-                        f"{ticker.best_bid:,.2f}",
-                        f"{ticker.best_ask:,.2f}",
-                        f"[{change_color}]{ticker.change_percent_24h:+.2f}%[/{change_color}]",
-                        f"{ticker.volume_24h:,.2f}",
-                    )
-
-                console.clear()
-                console.print(table)
-
-                candle_counter += 1
-                if candle_counter >= args.candle_interval / args.interval:
-                    console.print("\n[dim]--- Candle Close ---[/dim]")
-                    for engine in engines:
-                        candle = engine.close_candle("1m")
-                        console.print(f"  {candle.symbol}: O={candle.open:.2f} H={candle.high:.2f} L={candle.low:.2f} C={candle.close:.2f} V={candle.volume:.2f}")
-                    candle_counter = 0
-
-                time.sleep(args.interval)
-
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Simulator stopped.[/yellow]")
+    if args.command == "simulate-market":
+        from .order_flow import run_order_flow
+        scenario = get_market_scenario(args.scenario)
+        scenario_session = parse_session(args.session) if args.session else scenario.session
+        run_order_flow(
+            endpoint=args.endpoint,
+            symbols=list(scenario.symbols),
+            session=scenario_session,
+            rate=args.rate,
+            count=args.count,
+            dry_run=args.dry_run,
+        )
         return
 
     if args.command == "flow":
@@ -165,6 +147,7 @@ def main() -> None:
             endpoint=args.endpoint,
             symbols=list(requested_symbols) if requested_symbols else None,
             asset_classes=parse_csv(args.asset_class),
+            markets=parse_csv(args.market),
             book_modes=parse_csv(args.book_mode),
             session=session,
             rate=args.rate,
@@ -181,6 +164,7 @@ def main() -> None:
             args.count,
             symbols=requested_symbols,
             asset_classes=parse_csv(args.asset_class),
+            markets=parse_csv(args.market),
             book_modes=parse_csv(args.book_mode),
             session=session,
         ).run(dry_run=args.dry_run)
@@ -197,7 +181,9 @@ def parse_csv(value: str | None) -> tuple[str, ...] | None:
     return tuple(item.strip().upper() for item in value.split(",") if item.strip())
 
 
-def parse_session(value: str) -> MarketSession:
+def parse_session(value: str | None) -> MarketSession:
+    if not value:
+        return MarketSession.REGULAR
     normalized = value.replace("-", "_").upper()
     return MarketSession[normalized]
 

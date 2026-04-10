@@ -35,6 +35,7 @@ def build_market_configs(
     *,
     symbols: tuple[str, ...] | None = None,
     asset_classes: tuple[str, ...] | None = None,
+    markets: tuple[str, ...] | None = None,
     book_mode: str | None = None,
     session: MarketSession = MarketSession.REGULAR,
 ) -> list[MarketConfig]:
@@ -42,6 +43,7 @@ def build_market_configs(
     selected = catalog.filter(
         symbols=symbols,
         asset_classes=asset_classes,
+        markets=markets,
         book_mode=book_mode,
         session=session,
     )
@@ -56,6 +58,68 @@ def build_market_configs(
         )
         for item in selected
     ] or DEFAULT_MARKETS
+
+
+def run_market_simulation(
+    configs: list[MarketConfig],
+    *,
+    interval: float = 1.0,
+    candle_interval: int = 60,
+    title: str = "Market Simulator",
+) -> None:
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
+    symbols = [config.symbol for config in configs]
+    engines = [PriceEngine(config=config) for config in configs]
+    candle_counter = 0
+
+    console.print(f"[bold green]{title}[/bold green]")
+    console.print(f"  Symbols: {', '.join(symbols)}")
+    console.print(f"  Tick interval: {interval}s")
+    console.print(f"  Candle interval: {candle_interval}s")
+    console.print()
+
+    try:
+        while True:
+            table = Table(title="Live Market Data", show_header=True)
+            table.add_column("Symbol", style="cyan", width=10)
+            table.add_column("Last Price", justify="right", style="bold")
+            table.add_column("Bid", justify="right", style="green")
+            table.add_column("Ask", justify="right", style="red")
+            table.add_column("24h Change", justify="right")
+            table.add_column("Volume", justify="right")
+
+            for engine in engines:
+                ticker = engine.tick()
+                change_color = "green" if ticker.change_24h >= 0 else "red"
+                table.add_row(
+                    ticker.symbol,
+                    f"{ticker.last_price:,.2f}",
+                    f"{ticker.best_bid:,.2f}",
+                    f"{ticker.best_ask:,.2f}",
+                    f"[{change_color}]{ticker.change_percent_24h:+.2f}%[/{change_color}]",
+                    f"{ticker.volume_24h:,.2f}",
+                )
+
+            console.clear()
+            console.print(table)
+
+            candle_counter += 1
+            if candle_counter >= candle_interval / interval:
+                console.print("\n[dim]--- Candle Close ---[/dim]")
+                for engine in engines:
+                    candle = engine.close_candle("1m")
+                    console.print(
+                        f"  {candle.symbol}: O={candle.open:.2f} H={candle.high:.2f} "
+                        f"L={candle.low:.2f} C={candle.close:.2f} V={candle.volume:.2f}"
+                    )
+                candle_counter = 0
+
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        console.print(f"\n[yellow]{title} stopped.[/yellow]")
 
 
 @dataclass

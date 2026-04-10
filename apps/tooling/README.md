@@ -12,6 +12,7 @@ exchange-tooling replay apps/tooling/samples/orders.jsonl --endpoint http://loca
 exchange-tooling flow --asset-class Equity --session regular --dry-run
 exchange-tooling flow --asset-class Bdr --session after-market --dry-run
 exchange-tooling simulate --asset-class Etf
+exchange-tooling simulate-market --scenario expanded-market --endpoint http://localhost:8080 --rate 3
 ```
 
 ## Estrutura
@@ -20,11 +21,22 @@ exchange-tooling simulate --asset-class Etf
 - `load`: produz fluxo sintético contínuo para o `gateway-api`
 - `replay`: reenvia uma trilha JSONL preservando offsets temporais
 - `flow`: respeita regras de tick, lote, quantidade mínima/máxima, tipos de ordem e sessão
+- `simulate-market`: envia fluxo de ordens para a API usando cenários prontos do mercado expandido
 - filtros disponíveis: `--symbol/--symbols`, `--asset-class`, `--book-mode`, `--session`
 
 ## Instrumentos e cenários
 
 - O catálogo padrão agora inclui crypto spot, ações spot, ETF, BDR, FX spot simulado e commodity spot sintética.
+- O comando `simulate-market` inclui cenários prontos:
+  - `expanded-market`
+  - `equities`
+  - `etf`
+  - `bdr`
+  - `fx`
+  - `crypto`
+- A sessão padrão depende do cenário. Exemplo:
+  - `expanded-market`, `equities`, `etf`, `fx`, `crypto` usam `REGULAR`
+  - `bdr` usa `AFTER_MARKET`
 - Os cenários de replay ficam em `apps/tooling/samples/`:
   - `crypto-spot.jsonl`
   - `equity-regular.jsonl`
