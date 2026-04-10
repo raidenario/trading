@@ -11,13 +11,17 @@ import time
 import httpx
 from rich.console import Console
 
-from .generators import OrderGenerator, PARTICIPANTS, REFERENCE_PRICES
+from .generators import OrderGenerator, PARTICIPANTS
+from .instruments import InstrumentCatalog, MarketSession
 
 console = Console()
 
 def run_order_flow(
     endpoint: str = "http://localhost:5103",
     symbols: list[str] | None = None,
+    asset_classes: tuple[str, ...] | None = None,
+    book_modes: tuple[str, ...] | None = None,
+    session: MarketSession = MarketSession.REGULAR,
     rate: float = 2.0,
     count: int | None = None,
     dry_run: bool = False,
@@ -32,18 +36,27 @@ def run_order_flow(
         count: Total orders to send (None = infinite).
         dry_run: If True, print orders without sending.
     """
-    symbols = symbols or list(REFERENCE_PRICES.keys())
+    catalog = InstrumentCatalog.default()
+    selected_symbols = tuple(symbols) if symbols else None
     interval = 1.0 / rate if rate > 0 else 1.0
     sent = 0
-    generator = OrderGenerator(symbols=tuple(symbols))
+    generator = OrderGenerator(
+        catalog=catalog,
+        symbols=selected_symbols,
+        asset_classes=asset_classes,
+        book_modes=book_modes,
+        session=session,
+    )
+    available = [item.symbol for item in generator._eligible_instruments()]
     account_map = {participant.account_id: participant.name for participant in PARTICIPANTS}
 
     console.print(f"[bold green]Order Flow Generator[/bold green]")
     console.print(f"  Endpoint: {endpoint}")
-    console.print(f"  Symbols:  {', '.join(symbols)}")
+    console.print(f"  Symbols:  {', '.join(available)}")
     console.print(f"  Rate:     {rate} orders/sec")
     console.print(f"  Count:    {'infinite' if count is None else count}")
     console.print(f"  Dry Run:  {dry_run}")
+    console.print(f"  Session:  {session.value}")
     console.print(f"  Accounts: {', '.join(f'{p.name}={p.account_id[:8]}' for p in PARTICIPANTS)}")
     console.print()
 

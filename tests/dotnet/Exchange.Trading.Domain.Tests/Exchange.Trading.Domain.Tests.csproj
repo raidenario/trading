@@ -20,6 +20,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\libs\dotnet\Exchange.Trading.Domain\Exchange.Trading.Domain.csproj" />
+    <ProjectReference Include="..\..\..\libs\dotnet\Exchange.Trading.Application\Exchange.Trading.Application.csproj" />
+    <ProjectReference Include="..\..\..\libs\dotnet\Exchange.Trading.Infrastructure\Exchange.Trading.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\..\libs\contracts\dotnet\Exchange.Platform.Contracts\Exchange.Platform.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\apps\ledger-service\src\Exchange.Ledger.Api\Exchange.Ledger.Api.csproj" />
+    <ProjectReference Include="..\..\..\apps\query-api\src\Exchange.Query.Api\Exchange.Query.Api.csproj" />
   </ItemGroup>
 
 </Project>

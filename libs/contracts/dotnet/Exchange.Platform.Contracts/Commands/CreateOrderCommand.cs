@@ -11,4 +11,9 @@ public sealed record CreateOrderCommand(
     TimeInForce TimeInForce,
     string? ClientOrderId,
     DateTimeOffset SubmittedAt,
+    Guid? InstrumentId = null,
+    Guid? TradingAccountId = null,
+    OrderSource SourceSystem = OrderSource.Api,
+    Dictionary<string, string>? ExecutionInstructions = null,
+    decimal? StopPrice = null,
     int SchemaVersion = 1);

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize, de};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::fmt;
@@ -51,6 +53,15 @@ pub struct Order {
     
     #[serde(rename = "AccountId", alias = "accountId", alias = "account_id")]
     pub account_id: String,
+
+    #[serde(rename = "TradingAccountId", alias = "tradingAccountId", alias = "trading_account_id", default)]
+    pub trading_account_id: Option<String>,
+
+    #[serde(rename = "InstrumentId", alias = "instrumentId", alias = "instrument_id", default)]
+    pub instrument_id: Option<String>,
+
+    #[serde(rename = "ExecutionInstructions", alias = "executionInstructions", alias = "execution_instructions", default)]
+    pub execution_instructions: HashMap<String, String>,
     
     pub symbol: String,
     
@@ -110,6 +121,9 @@ impl Order {
         Self {
             id: id.into(),
             account_id: account_id.into(),
+            trading_account_id: None,
+            instrument_id: None,
+            execution_instructions: HashMap::new(),
             symbol: symbol.into(),
             side,
             order_type: OrderType::Limit,
@@ -133,6 +147,9 @@ impl Order {
         Self {
             id: id.into(),
             account_id: account_id.into(),
+            trading_account_id: None,
+            instrument_id: None,
+            execution_instructions: HashMap::new(),
             symbol: symbol.into(),
             side,
             order_type: OrderType::Market,
@@ -222,5 +239,34 @@ mod tests {
         assert_eq!(order.price, Some(1_254_500));
         assert_eq!(order.sequence, 42);
         assert_eq!(order.status, OrderStatus::Pending);
+    }
+
+    #[test]
+    fn deserializes_b3_fields_when_present_and_keeps_old_payloads_compatible() {
+        let payload = r#"{
+            "OrderId":"24f2dd65-e2ed-41ea-94b6-a9412e930926",
+            "AccountId":"22222222-2222-2222-2222-222222222222",
+            "TradingAccountId":"bbbbbbbb-0000-0000-0000-000000000001",
+            "InstrumentId":"aaaaaaaa-0000-0000-0000-000000000001",
+            "Symbol":"SOL-USD",
+            "Side":2,
+            "Type":1,
+            "Quantity":1.3383,
+            "Price":125.45,
+            "TimeInForce":1,
+            "ClientOrderId":"sim-a504c8c9",
+            "SubmittedAt":"2026-03-23T15:11:38.612508+00:00",
+            "SchemaVersion":1
+        }"#;
+
+        let order = serde_json::from_str::<Order>(payload)
+            .expect("payload with B3 fields must deserialize")
+            .prepare_for_matching(42);
+
+        assert_eq!(order.instrument_id.as_deref(), Some("aaaaaaaa-0000-0000-0000-000000000001"));
+        assert_eq!(order.trading_account_id.as_deref(), Some("bbbbbbbb-0000-0000-0000-000000000001"));
+        assert!(order.execution_instructions.is_empty());
+        assert_eq!(order.symbol, "SOL-USD");
+        assert_eq!(order.order_type, OrderType::Limit);
     }
 }

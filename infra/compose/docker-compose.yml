@@ -16,7 +16,7 @@ services:
       POSTGRES_DB: exchange
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ../postgres/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
+      - ../postgres:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U exchange -d exchange"]
       interval: 5s

@@ -203,11 +203,14 @@ impl OrderBook {
 
                     trades.push(Trade {
                         trade_id: format!("trade-{:010}", *trade_sequence),
+                        instrument_id: incoming.instrument_id.clone().or_else(|| resting.instrument_id.clone()),
                         symbol: incoming.symbol.clone(),
                         buy_order_id: incoming.id.clone(),
                         sell_order_id: resting.id.clone(),
                         buy_account_id: incoming.account_id.clone(),
                         sell_account_id: resting.account_id.clone(),
+                        buy_trading_account_id: incoming.trading_account_id.clone(),
+                        sell_trading_account_id: resting.trading_account_id.clone(),
                         price: best_ask_price,
                         quantity: fill_quantity,
                     });
@@ -264,11 +267,14 @@ impl OrderBook {
 
                     trades.push(Trade {
                         trade_id: format!("trade-{:010}", *trade_sequence),
+                        instrument_id: incoming.instrument_id.clone().or_else(|| resting.instrument_id.clone()),
                         symbol: incoming.symbol.clone(),
                         buy_order_id: resting.id.clone(),
                         sell_order_id: incoming.id.clone(),
                         buy_account_id: resting.account_id.clone(),
                         sell_account_id: incoming.account_id.clone(),
+                        buy_trading_account_id: resting.trading_account_id.clone(),
+                        sell_trading_account_id: incoming.trading_account_id.clone(),
                         price: best_bid_price,
                         quantity: fill_quantity,
                     });

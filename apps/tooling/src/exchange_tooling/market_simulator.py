@@ -12,6 +12,8 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from .instruments import InstrumentCatalog, MarketSession
+
 
 @dataclass(slots=True)
 class MarketConfig:
@@ -27,6 +29,33 @@ DEFAULT_MARKETS = [
     MarketConfig("ETH-USD", 3_500.0, 0.002, 0.01, 0.001),
     MarketConfig("SOL-USD", 125.0, 0.003, 0.01, 0.01),
 ]
+
+
+def build_market_configs(
+    *,
+    symbols: tuple[str, ...] | None = None,
+    asset_classes: tuple[str, ...] | None = None,
+    book_mode: str | None = None,
+    session: MarketSession = MarketSession.REGULAR,
+) -> list[MarketConfig]:
+    catalog = InstrumentCatalog.default()
+    selected = catalog.filter(
+        symbols=symbols,
+        asset_classes=asset_classes,
+        book_mode=book_mode,
+        session=session,
+    )
+
+    return [
+        MarketConfig(
+            symbol=item.symbol,
+            base_price=item.base_price,
+            volatility=0.002 if item.asset_class != "Crypto" else 0.003,
+            tick_size=item.tick_size,
+            lot_size=item.lot_size,
+        )
+        for item in selected
+    ] or DEFAULT_MARKETS
 
 
 @dataclass

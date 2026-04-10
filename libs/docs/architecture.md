@@ -1,118 +1,60 @@
-# Exchange Platform — Architecture
+# Exchange Platform Architecture
 
-## 1. Motivação
+## Current Architecture
 
-Este projeto modela uma **plataforma de exchange** (corretora de ativos digitais) com o objetivo de demonstrar arquitetura de sistemas de alto desempenho usando uma abordagem **poliglota** (múltiplas linguagens), **event-driven** (orientada a eventos) e **CQRS** (separação entre escrita e leitura).
+This monorepo is an exchange / broker simulator with a CQRS and event-driven split:
 
-A motivação é criar um projeto de portfólio que reflita decisões arquiteturais reais de fintechs e exchanges:
+- `gateway-api` receives account and order commands and now enriches orders with `instrument_id` and `trading_account_id` while still accepting `symbol`-based requests.
+- `matching-engine` keeps in-memory books keyed by symbol, preserves FIFO matching behavior, and now accepts/publishes optional B3-style identifiers.
+- `ledger-service` keeps the current reserve/debit/credit flow functionally equivalent and now records richer ledger entries plus passive positions.
+- `query-api` still serves the existing history/ticker/balance views and now also projects instruments, enriched orders, enriched trades, and positions.
+- `realtime-gateway` continues broadcasting market data without topic changes.
+- Kafka topics remain unchanged: `order-commands`, `matching-events`, `ledger-events`, `marketdata-events`, `account-events`.
 
-- **Latência ultrabaixa** no cruzamento de ordens → Rust
-- **APIs e regras de negócio** bem estruturadas → C# / .NET
-- **Milhares de conexões WebSocket simultâneas** → Elixir / Phoenix
-- **Simulação e automação** rápida → Python
+## B3-Inspired Core Model Added Now
 
----
+The codebase now includes the reference and post-trade preparation objects required for a future B3-like structure:
 
-## 2. Papel de Cada Serviço
+- `Instrument`: tradable reference data with market/segment/precision/tick/lot metadata.
+- `Participant`: broker/member abstraction for future exchange participant modeling.
+- `TradingAccount`: trading relationship linked to the current `account_id`.
+- `Order`: enriched with `instrument_id`, `trading_account_id`, `source_system`, and execution-instruction placeholders.
+- `TradeExecution`: explicit execution record separated from future clearing/settlement processing.
+- `TradeAllocation`: explicit allocation model, even though allocation is still 1:1 today.
+- `Position`: persisted/projection-ready position concept separated from balances.
+- `LedgerEntry`: richer audit shape with bucket, direction, reference type, and metadata.
+- Future passive placeholders: `settlement_obligations`, `settlement_batches`, `netting_sets`, `clearing_sessions`, `risk_snapshots`, `custody_movements`.
 
-| Serviço | Linguagem | Porta | Responsabilidade |
-|---------|-----------|-------|-----------------|
-| `gateway-api` | C# | 8080 (Docker) / 5103 (local) | Porta de entrada REST. Recebe ordens, valida conta/saldo, encaminha ao matching |
-| `query-api` | C# | 8081 / 5267 | Read-side. Consulta de histórico, ticker, candles, market overview |
-| `ledger-service` | C# | 8082 / 5075 | Contabilidade. Saldos, reservas, extrato |
-| `matching-engine` | Rust | 7000 | Motor de cruzamento. Order book FIFO em memória por nível de preço |
-| `realtime-gateway` | Elixir | 4000 | Distribuição de eventos em tempo real via WebSocket (Phoenix Channels) |
-| `tooling` | Python | CLI | Simulador de mercado, gerador de ordens, load test, replay |
-| `frontend` | React/TS | 3000 | Interface web para operar e visualizar o sistema |
+## What Is Implemented Now
 
----
+- Default crypto instruments for `BTC-USD`, `ETH-USD`, and `SOL-USD`.
+- Default participant plus one default trading account per seeded account.
+- Gateway/API application-layer enrichment from `symbol` and `account_id`.
+- Matching engine compatibility for old and new order payload shapes.
+- Trade events carrying instrument and trading-account identifiers.
+- Query-side projections for instruments, positions, enriched orders, and enriched trades.
+- Ledger-side position projection and richer audit entries without changing the existing balance effect of trades.
+- Incremental PostgreSQL migration `002_b3_core_model.sql` with backfill/placeholder schema.
 
-## 3. Papel de Cada Tecnologia de Infraestrutura
+## What Is Intentionally Postponed
 
-| Tecnologia | Papel | Source of Truth? |
-|------------|-------|-----------------|
-| **PostgreSQL** | Persistência primária de contas, saldos, ordens, trades e ledger | ✅ Sim |
-| **Redis** | Cache de ticker, snapshot de market summary, pub/sub para realtime | ❌ Cache |
-| **Kafka** | Mensageria assíncrona entre microserviços | N/A (transporte) |
+The following are modeled only as passive preparation structures. No active workflow has been attached:
 
-### Source of Truth vs Cache
+- final settlement workflows
+- risk management and exposure controls
+- collateral / margin processing
+- clearinghouse guarantees
+- netting or gross settlement engines
+- custody / depository transfers
+- liquidation instruction execution
+- participant default handling
+- corporate actions
+- derivatives lifecycle settlement
 
-- **PostgreSQL** é a fonte da verdade para todos os dados persistentes
-- **Redis** é usado apenas como camada de cache rápida e como veículo de pub/sub
-- O **Order Book em memória (Rust)** é a fonte da verdade para o estado corrente do livro de ofertas; ele pode ser reconstruído a partir de replays de eventos se necessário
+## Compatibility Notes
 
----
-
-## 4. Write Side vs Read Side (CQRS)
-
-```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│ Write Side  │     │  Event Bus       │     │  Read Side      │
-│             │────▶│  (Kafka)         │────▶│                 │
-│ gateway-api │     │                  │     │ query-api       │
-│ matching    │     │ order-commands   │     │ ledger-service  │
-│ ledger      │     │ matching-events  │     │ Redis cache     │
-│             │     │ ledger-events    │     │                 │
-└─────────────┘     └──────────────────┘     └─────────────────┘
-```
-
-- **Write Side**: `gateway-api` recebe comandos, valida e publica em `order-commands`. O `matching-engine` processa e emite `matching-events` e `marketdata-events`. O `ledger-service` consome `account-events`, `order-commands` e `matching-events` para projetar saldos e emitir `ledger-events`.
-- **Read Side**: `query-api` consome `order-commands`, `matching-events`, `ledger-events` e `marketdata-events` para servir histórico, ticker, trades e balances sem depender de chamadas síncronas ao ledger.
-
----
-
-## 5. Tópicos Kafka
-
-| Tópico | Produtor | Consumidor(es) | Conteúdo |
-|--------|----------|----------------|----------|
-| `order-commands` | gateway-api | matching-engine | Comandos de criação/cancelamento de ordens |
-| `matching-events` | matching-engine | ledger, query | Aceite/rejeição de ordens e trades executados |
-| `ledger-events` | ledger-service | query-api | Deltas de saldo e liberações de reserva |
-| `marketdata-events` | matching-engine | realtime-gateway, query-api | Book e ticker updates |
-| `account-events` | gateway-api | ledger, query | Criação de conta, funding |
-
----
-
-## 6. Fluxo de Dados Macro
-
-1. **Conta criada** → `gateway-api` → evento `AccountCreated` → PostgreSQL + Kafka
-2. **Funding** → `gateway-api` → saldo atualizado → evento `AccountFunded`
-3. **Ordem enviada** → `gateway-api` valida payload e publica em `order-commands`
-4. **Matching** → Rust consome, processa order book em memória e gera `OrderAccepted` / `OrderRejected`, `TradeExecuted`, `BookUpdated`, `TickerUpdated`
-5. **Settlement** → `ledger-service` reserva saldo a partir de `order-commands`, liquida trades a partir de `matching-events` e publica `ledger-events`
-6. **Projeções** → `query-api` recebe comandos/eventos e atualiza modelos de leitura
-7. **Realtime** → Elixir recebe eventos de market data e distribui via WebSocket
-8. **Frontend** → consome REST + WebSocket para exibir dados ao usuário
-
----
-
-## 7. Simulador Python
-
-O módulo `tooling` em Python serve para **dar vida ao sistema** durante desenvolvimento:
-
-- `exchange-tooling simulate` → gera tickers e candles contínuos (Geometric Brownian Motion)
-- `exchange-tooling flow` → envia ordens fake continuamente para a API
-- `exchange-tooling load` → burst controlado de ordens para stress test
-- `exchange-tooling replay` → reproduz cenários salvos em JSONL
-
----
-
-## 8. Estrutura de Balances
-
-Cada conta mantém saldos por ativo com a seguinte modelagem:
-
-```
-┌──────────────────────────────────────────┐
-│              Account Balance             │
-├──────────────────────────────────────────┤
-│ Available  = dinheiro livre para operar  │
-│ Reserved   = dinheiro bloqueado em       │
-│              ordens abertas              │
-│ Total      = Available + Reserved        │
-└──────────────────────────────────────────┘
-```
-
-Quando uma ordem de compra é aceita:
-1. O valor necessário é **reservado** (moved de Available → Reserved)
-2. Se a ordem é executada, o Reserved é consumido e o ativo é creditado
-3. Se a ordem é cancelada, o Reserved volta para Available
+- Existing order submission still accepts the old request contract shape.
+- Existing matching behavior remains symbol-driven and FIFO.
+- Existing market data and realtime flows remain unchanged.
+- Existing balance reservation and trade settlement behavior remain functionally equivalent.
+- Existing read endpoints remain available; new projections are additive.

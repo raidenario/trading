@@ -11,9 +11,13 @@ public sealed class QueryProjectionStore
     private readonly ConcurrentDictionary<Guid, AccountSummary> _accounts = new();
     private readonly ConcurrentDictionary<string, AccountBalanceView> _balances = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<Guid, OrderHistoryItem> _orders = new();
+    private readonly ConcurrentDictionary<Guid, EnrichedOrderView> _enrichedOrders = new();
+    private readonly ConcurrentDictionary<string, InstrumentSnapshot> _instruments = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, PositionSnapshot> _positions = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, TickerSnapshot> _tickers = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<Guid, PendingOrderProjection> _pendingOrders = new();
     private readonly List<RecentTradeView> _trades = [];
+    private readonly List<EnrichedTradeView> _enrichedTrades = [];
     private readonly object _tradeLock = new();
 
     public QueryProjectionStore()
@@ -34,6 +38,21 @@ public sealed class QueryProjectionStore
                 balance.Reserved,
                 balance.Available + balance.Reserved,
                 seededAt);
+        }
+
+        foreach (var instrument in DemoSeed.Instruments)
+        {
+            _instruments[instrument.Symbol] = new InstrumentSnapshot(
+                instrument.InstrumentId,
+                instrument.Symbol,
+                instrument.AssetClass,
+                instrument.Segment,
+                instrument.Market,
+                instrument.BaseAsset,
+                instrument.QuoteAsset,
+                instrument.TradingStatus,
+                instrument.TickSize,
+                instrument.LotSize);
         }
     }
 
@@ -61,7 +80,31 @@ public sealed class QueryProjectionStore
             command.SubmittedAt,
             command.SubmittedAt);
 
-        _orders[command.OrderId] = ApplyPending(command.OrderId, order);
+        var tradingAccountId = ResolveTradingAccountId(command.AccountId, command.TradingAccountId);
+        var instrumentId = ResolveInstrumentId(command.Symbol, command.InstrumentId);
+        var enrichedOrder = new EnrichedOrderView(
+            command.OrderId,
+            command.AccountId,
+            tradingAccountId,
+            instrumentId,
+            command.Symbol.ToUpperInvariant(),
+            command.Side,
+            command.Type,
+            OrderStatus.Pending,
+            command.Quantity,
+            0m,
+            command.Quantity,
+            command.Price,
+            command.SourceSystem,
+            command.SubmittedAt,
+            command.SubmittedAt);
+
+        var pending = _pendingOrders.TryRemove(command.OrderId, out var existingPending)
+            ? existingPending
+            : null;
+
+        _orders[command.OrderId] = ApplyPending(order, pending);
+        _enrichedOrders[command.OrderId] = ApplyPending(enrichedOrder, pending);
     }
 
     public void Apply(OrderAccepted orderAccepted)
@@ -76,6 +119,12 @@ public sealed class QueryProjectionStore
             pending.Status = orderAccepted.Status;
             pending.UpdatedAt = orderAccepted.AcceptedAt;
         }
+
+        UpdateEnrichedOrder(orderAccepted.OrderId, current => current with
+        {
+            Status = orderAccepted.Status,
+            UpdatedAt = orderAccepted.AcceptedAt
+        });
     }
 
     public void Apply(OrderRejected orderRejected)
@@ -90,6 +139,12 @@ public sealed class QueryProjectionStore
             pending.Status = OrderStatus.Rejected;
             pending.UpdatedAt = orderRejected.RejectedAt;
         }
+
+        UpdateEnrichedOrder(orderRejected.OrderId, current => current with
+        {
+            Status = OrderStatus.Rejected,
+            UpdatedAt = orderRejected.RejectedAt
+        });
     }
 
     public void Apply(TradeExecuted tradeExecuted)
@@ -104,11 +159,43 @@ public sealed class QueryProjectionStore
                 $"{ShortAccount(tradeExecuted.BuyAccountId)}->{ShortAccount(tradeExecuted.SellAccountId)}",
                 tradeExecuted.ExecutedAt));
 
+            _enrichedTrades.Insert(0, new EnrichedTradeView(
+                tradeExecuted.TradeId,
+                ResolveInstrumentId(tradeExecuted.Symbol, tradeExecuted.InstrumentId),
+                tradeExecuted.Symbol.ToUpperInvariant(),
+                tradeExecuted.BuyOrderId,
+                tradeExecuted.SellOrderId,
+                ResolveTradingAccountId(tradeExecuted.BuyAccountId, tradeExecuted.BuyTradingAccountId),
+                ResolveTradingAccountId(tradeExecuted.SellAccountId, tradeExecuted.SellTradingAccountId),
+                tradeExecuted.Price,
+                tradeExecuted.Quantity,
+                tradeExecuted.ExecutedAt));
+
             if (_trades.Count > 500)
             {
                 _trades.RemoveRange(500, _trades.Count - 500);
             }
+
+            if (_enrichedTrades.Count > 500)
+            {
+                _enrichedTrades.RemoveRange(500, _enrichedTrades.Count - 500);
+            }
         }
+
+        UpdatePosition(
+            ResolveTradingAccountId(tradeExecuted.BuyAccountId, tradeExecuted.BuyTradingAccountId),
+            ResolveInstrumentId(tradeExecuted.Symbol, tradeExecuted.InstrumentId),
+            tradeExecuted.Symbol,
+            tradeExecuted.Quantity,
+            tradeExecuted.Price,
+            tradeExecuted.ExecutedAt);
+        UpdatePosition(
+            ResolveTradingAccountId(tradeExecuted.SellAccountId, tradeExecuted.SellTradingAccountId),
+            ResolveInstrumentId(tradeExecuted.Symbol, tradeExecuted.InstrumentId),
+            tradeExecuted.Symbol,
+            -tradeExecuted.Quantity,
+            tradeExecuted.Price,
+            tradeExecuted.ExecutedAt);
 
         ApplyFill(tradeExecuted.BuyOrderId, tradeExecuted.Quantity, tradeExecuted.Price, tradeExecuted.ExecutedAt);
         ApplyFill(tradeExecuted.SellOrderId, tradeExecuted.Quantity, tradeExecuted.Price, tradeExecuted.ExecutedAt);
@@ -154,6 +241,21 @@ public sealed class QueryProjectionStore
         _orders.Values
             .Where(order => !accountId.HasValue || order.AccountId == accountId.Value)
             .OrderByDescending(order => order.UpdatedAt)
+            .ToArray();
+
+    public IReadOnlyCollection<EnrichedOrderView> GetEnrichedOrders(Guid? accountId) =>
+        _enrichedOrders.Values
+            .Where(order => !accountId.HasValue || order.AccountId == accountId.Value)
+            .OrderByDescending(order => order.UpdatedAt)
+            .ToArray();
+
+    public IReadOnlyCollection<InstrumentSnapshot> GetInstruments() =>
+        _instruments.Values.OrderBy(item => item.Symbol).ToArray();
+
+    public IReadOnlyCollection<PositionSnapshot> GetPositions(Guid? tradingAccountId) =>
+        _positions.Values
+            .Where(position => !tradingAccountId.HasValue || position.TradingAccountId == tradingAccountId.Value)
+            .OrderBy(position => position.Symbol)
             .ToArray();
 
     public IReadOnlyCollection<BalanceSnapshot> GetBalances(Guid accountId) =>
@@ -209,6 +311,18 @@ public sealed class QueryProjectionStore
         }
     }
 
+    public IReadOnlyCollection<EnrichedTradeView> GetEnrichedTrades(string? symbol, int? limit)
+    {
+        var effectiveLimit = Math.Clamp(limit ?? 20, 1, 100);
+        lock (_tradeLock)
+        {
+            return _enrichedTrades
+                .Where(trade => string.IsNullOrWhiteSpace(symbol) || trade.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase))
+                .Take(effectiveLimit)
+                .ToArray();
+        }
+    }
+
     public IReadOnlyCollection<MarketOverviewItem> GetMarketOverview() =>
         _tickers.Values
             .OrderBy(ticker => ticker.Symbol)
@@ -226,23 +340,37 @@ public sealed class QueryProjectionStore
     private void ApplyFill(Guid orderId, decimal quantity, decimal lastTradePrice, DateTimeOffset executedAt)
     {
         if (!UpdateOrder(orderId, current =>
-        {
-            var filledQuantity = current.FilledQuantity + quantity;
-            var status = filledQuantity >= current.Quantity ? OrderStatus.Filled : OrderStatus.PartiallyFilled;
-            return current with
             {
-                FilledQuantity = filledQuantity,
-                Status = status,
-                UpdatedAt = executedAt,
-                Price = current.Price ?? lastTradePrice
-            };
-        }))
+                var filledQuantity = current.FilledQuantity + quantity;
+                var status = filledQuantity >= current.Quantity ? OrderStatus.Filled : OrderStatus.PartiallyFilled;
+                return current with
+                {
+                    FilledQuantity = filledQuantity,
+                    Status = status,
+                    UpdatedAt = executedAt,
+                    Price = current.Price ?? lastTradePrice
+                };
+            }))
         {
             var pending = _pendingOrders.GetOrAdd(orderId, _ => new PendingOrderProjection());
             pending.FilledQuantity += quantity;
             pending.LastTradePrice = lastTradePrice;
             pending.UpdatedAt = executedAt;
         }
+
+        UpdateEnrichedOrder(orderId, current =>
+        {
+            var filledQuantity = current.FilledQuantity + quantity;
+            var status = filledQuantity >= current.Quantity ? OrderStatus.Filled : OrderStatus.PartiallyFilled;
+            return current with
+            {
+                FilledQuantity = filledQuantity,
+                OpenQuantity = Math.Max(current.Quantity - filledQuantity, 0m),
+                Status = status,
+                UpdatedAt = executedAt,
+                Price = current.Price ?? lastTradePrice
+            };
+        });
     }
 
     private bool UpdateOrder(Guid orderId, Func<OrderHistoryItem, OrderHistoryItem> apply)
@@ -256,9 +384,20 @@ public sealed class QueryProjectionStore
         return false;
     }
 
-    private OrderHistoryItem ApplyPending(Guid orderId, OrderHistoryItem current)
+    private bool UpdateEnrichedOrder(Guid orderId, Func<EnrichedOrderView, EnrichedOrderView> apply)
     {
-        if (!_pendingOrders.TryRemove(orderId, out var pending))
+        if (_enrichedOrders.TryGetValue(orderId, out var current))
+        {
+            _enrichedOrders[orderId] = apply(current);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static OrderHistoryItem ApplyPending(OrderHistoryItem current, PendingOrderProjection? pending)
+    {
+        if (pending is null)
         {
             return current;
         }
@@ -278,6 +417,54 @@ public sealed class QueryProjectionStore
         };
     }
 
+    private static EnrichedOrderView ApplyPending(EnrichedOrderView current, PendingOrderProjection? pending)
+    {
+        if (pending is null)
+        {
+            return current;
+        }
+
+        var filledQuantity = current.FilledQuantity + pending.FilledQuantity;
+        var status = pending.Status
+            ?? (filledQuantity >= current.Quantity ? OrderStatus.Filled
+                : filledQuantity > 0 ? OrderStatus.PartiallyFilled
+                : current.Status);
+
+        return current with
+        {
+            FilledQuantity = filledQuantity,
+            OpenQuantity = Math.Max(current.Quantity - filledQuantity, 0m),
+            Status = status,
+            Price = current.Price ?? pending.LastTradePrice,
+            UpdatedAt = pending.UpdatedAt ?? current.UpdatedAt
+        };
+    }
+
+    private void UpdatePosition(Guid tradingAccountId, Guid instrumentId, string symbol, decimal netDelta, decimal tradePrice, DateTimeOffset executedAt)
+    {
+        var positionDate = DateOnly.FromDateTime(executedAt.UtcDateTime);
+        var key = PositionKey(tradingAccountId, instrumentId, positionDate);
+        var existing = _positions.TryGetValue(key, out var current)
+            ? current
+            : new PositionSnapshot(Guid.NewGuid(), tradingAccountId, instrumentId, symbol.ToUpperInvariant(), positionDate, 0m, null, 0m, 0m, executedAt);
+
+        var netQuantity = decimal.Round(existing.NetQuantity + netDelta, 8, MidpointRounding.ToZero);
+        _positions[key] = existing with
+        {
+            NetQuantity = netQuantity,
+            AverageOpenPrice = tradePrice,
+            LongQuantity = netQuantity > 0 ? netQuantity : 0m,
+            ShortQuantity = netQuantity < 0 ? Math.Abs(netQuantity) : 0m,
+            UpdatedAt = executedAt
+        };
+    }
+
+    private static Guid ResolveTradingAccountId(Guid accountId, Guid? tradingAccountId) =>
+        tradingAccountId ?? DemoSeed.TradingAccounts.First(account => account.AccountId == accountId).TradingAccountId;
+
+    private static Guid ResolveInstrumentId(string symbol, Guid? instrumentId) =>
+        instrumentId ?? DemoSeed.Instruments.First(instrument => instrument.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase)).InstrumentId;
+
     private sealed class PendingOrderProjection
     {
         public OrderStatus? Status { get; set; }
@@ -291,4 +478,7 @@ public sealed class QueryProjectionStore
 
     private static string BalanceKey(Guid accountId, string asset) =>
         $"{accountId}:{asset.ToUpperInvariant()}";
+
+    private static string PositionKey(Guid tradingAccountId, Guid instrumentId, DateOnly positionDate) =>
+        $"{tradingAccountId:N}:{instrumentId:N}:{positionDate:yyyyMMdd}";
 }

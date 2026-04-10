@@ -35,6 +35,8 @@ Thumbs.db
 # Environment
 .env
 *.env.local
+.dotnet/
+.estudos/
 
 # Docker
 pgdata/

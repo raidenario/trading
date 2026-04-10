@@ -8,9 +8,19 @@
     "tradeId": { "type": "string" },
     "buyOrderId": { "type": "string", "format": "uuid" },
     "sellOrderId": { "type": "string", "format": "uuid" },
+    "instrumentId": { "type": ["string", "null"], "format": "uuid" },
+    "buyTradingAccountId": { "type": ["string", "null"], "format": "uuid" },
+    "sellTradingAccountId": { "type": ["string", "null"], "format": "uuid" },
     "symbol": { "type": "string" },
     "price": { "type": "number", "exclusiveMinimum": 0 },
     "quantity": { "type": "number", "exclusiveMinimum": 0 },
+    "aggressorSide": { "type": ["string", "null"], "enum": ["Buy", "Sell", null] },
+    "tradeSource": { "type": "string" },
+    "exchangeExecutionId": { "type": ["string", "null"] },
+    "metadata": {
+      "type": ["object", "null"],
+      "additionalProperties": { "type": "string" }
+    },
     "executedAt": { "type": "string", "format": "date-time" },
     "schemaVersion": { "type": "integer", "const": 1 }
   }

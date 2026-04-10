@@ -10,7 +10,8 @@ namespace Exchange.Query.Api;
 public sealed class KafkaProjectionConsumer(
     IConfiguration configuration,
     ILogger<KafkaProjectionConsumer> logger,
-    QueryProjectionStore store) : BackgroundService
+    QueryProjectionStore store,
+    PostgresProjectionWriter postgresWriter) : BackgroundService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -81,6 +82,7 @@ public sealed class KafkaProjectionConsumer(
             if (order is not null)
             {
                 store.Apply(order);
+                postgresWriter.UpsertOrderAsync(order, CancellationToken.None).GetAwaiter().GetResult();
                 logger.LogInformation(
                     "Query consumed {Topic} for OrderId={OrderId} AccountId={AccountId} Symbol={Symbol}.",
                     topic,
@@ -101,20 +103,20 @@ public sealed class KafkaProjectionConsumer(
         switch (envelope.EventType)
         {
             case nameof(AccountCreated):
+                PersistAndApply<AccountCreated>(envelope, store.Apply, (message, ct) => postgresWriter.UpsertAccountAsync(message, ct));
                 logger.LogInformation("Query consumed {Topic} event {EventType}.", topic, envelope.EventType);
-                DeserializeAndApply<AccountCreated>(envelope, store.Apply);
                 break;
             case nameof(OrderAccepted):
+                PersistAndApply<OrderAccepted>(envelope, store.Apply, (message, ct) => postgresWriter.ApplyOrderAcceptedAsync(message, ct));
                 logger.LogInformation("Query consumed {Topic} event {EventType}.", topic, envelope.EventType);
-                DeserializeAndApply<OrderAccepted>(envelope, store.Apply);
                 break;
             case nameof(OrderRejected):
+                PersistAndApply<OrderRejected>(envelope, store.Apply, (message, ct) => postgresWriter.ApplyOrderRejectedAsync(message, ct));
                 logger.LogInformation("Query consumed {Topic} event {EventType}.", topic, envelope.EventType);
-                DeserializeAndApply<OrderRejected>(envelope, store.Apply);
                 break;
             case nameof(TradeExecuted):
+                PersistAndApply<TradeExecuted>(envelope, store.Apply, (message, ct) => postgresWriter.ApplyTradeExecutedAsync(message, ct));
                 logger.LogInformation("Query consumed {Topic} event {EventType}.", topic, envelope.EventType);
-                DeserializeAndApply<TradeExecuted>(envelope, store.Apply);
                 break;
             case nameof(BalanceAdjusted):
                 logger.LogInformation("Query consumed {Topic} event {EventType}.", topic, envelope.EventType);
@@ -125,6 +127,22 @@ public sealed class KafkaProjectionConsumer(
                 DeserializeAndApply<TickerUpdated>(envelope, store.Apply);
                 break;
         }
+    }
+
+    private void PersistAndApply<T>(
+        IntegrationEventEnvelope envelope,
+        Action<T> apply,
+        Func<T, CancellationToken, Task> persist)
+        where T : class
+    {
+        var message = envelope.Payload.Deserialize<T>(JsonOptions);
+        if (message is null)
+        {
+            return;
+        }
+
+        apply(message);
+        persist(message, CancellationToken.None).GetAwaiter().GetResult();
     }
 
     private void DeserializeAndApply<T>(IntegrationEventEnvelope envelope, Action<T> apply)

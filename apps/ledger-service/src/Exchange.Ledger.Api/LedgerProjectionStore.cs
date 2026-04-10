@@ -13,6 +13,7 @@ public sealed class LedgerProjectionStore
     private readonly ConcurrentDictionary<Guid, LedgerAccountState> _accounts = new();
     private readonly ConcurrentDictionary<Guid, ReservedOrderState> _orders = new();
     private readonly ConcurrentDictionary<Guid, List<PendingLedgerEvent>> _pendingEvents = new();
+    private readonly ConcurrentDictionary<string, PositionState> _positions = new(StringComparer.OrdinalIgnoreCase);
 
     public LedgerProjectionStore()
     {
@@ -43,6 +44,9 @@ public sealed class LedgerProjectionStore
             accountFunded.Asset,
             accountFunded.Amount,
             LedgerEntryType.Deposit,
+            BalanceBucket.Available,
+            EntryDirection.Credit,
+            ReferenceType.Funding,
             "funding",
             accountFunded.FundedAt));
 
@@ -74,15 +78,20 @@ public sealed class LedgerProjectionStore
             return [];
         }
 
-        _orders[command.OrderId] = new ReservedOrderState(
+        var orderState = new ReservedOrderState(
             command.OrderId,
             command.AccountId,
+            ResolveTradingAccountId(command.AccountId, command.TradingAccountId),
+            ResolveInstrumentId(command.Symbol, command.InstrumentId),
+            command.Symbol,
             baseAsset,
             quoteAsset,
             reservedAsset,
             reservedAmount,
             command.Quantity,
             command.Side);
+
+        _orders[command.OrderId] = orderState;
 
         ApplyDelta(command.AccountId, reservedAsset, -reservedAmount, reservedAmount);
         account.Entries.Insert(0, new LedgerEntry(
@@ -91,19 +100,24 @@ public sealed class LedgerProjectionStore
             reservedAsset,
             -reservedAmount,
             LedgerEntryType.Hold,
-            $"order:{command.OrderId}",
-            command.SubmittedAt));
+            BalanceBucket.Available,
+            EntryDirection.Debit,
+            ReferenceType.Order,
+            command.OrderId.ToString(),
+            command.SubmittedAt,
+            orderState.TradingAccountId,
+            new Dictionary<string, string> { ["symbol"] = command.Symbol }));
 
         var adjustments = new List<BalanceAdjusted>
         {
             new BalanceAdjusted(
-            command.AccountId,
-            reservedAsset,
-            -reservedAmount,
-            reservedAmount,
-            "OrderReserved",
-            command.SubmittedAt,
-            command.OrderId)
+                command.AccountId,
+                reservedAsset,
+                -reservedAmount,
+                reservedAmount,
+                "OrderReserved",
+                command.SubmittedAt,
+                command.OrderId)
         };
 
         adjustments.AddRange(ApplyPendingEvents(command.OrderId));
@@ -125,8 +139,13 @@ public sealed class LedgerProjectionStore
             order.ReservedAsset,
             order.OutstandingReserved,
             LedgerEntryType.Release,
-            $"order:{order.OrderId}",
-            orderRejected.RejectedAt));
+            BalanceBucket.Available,
+            EntryDirection.Credit,
+            ReferenceType.Order,
+            order.OrderId.ToString(),
+            orderRejected.RejectedAt,
+            order.TradingAccountId,
+            new Dictionary<string, string> { ["symbol"] = order.Symbol }));
 
         return new BalanceAdjusted(
             order.AccountId,
@@ -191,9 +210,29 @@ public sealed class LedgerProjectionStore
             .ToArray();
     }
 
+    public IReadOnlyCollection<PositionSnapshot> GetPositions(Guid tradingAccountId) =>
+        _positions.Values
+            .Where(position => position.TradingAccountId == tradingAccountId)
+            .OrderBy(position => position.Symbol)
+            .Select(position => new PositionSnapshot(
+                position.PositionId,
+                position.TradingAccountId,
+                position.InstrumentId,
+                position.Symbol,
+                position.PositionDate,
+                position.NetQuantity,
+                position.AverageOpenPrice,
+                position.LongQuantity,
+                position.ShortQuantity,
+                position.UpdatedAt))
+            .ToArray();
+
     private IReadOnlyCollection<BalanceAdjusted> ApplyTradeToOrder(ReservedOrderState order, TradeExecuted tradeExecuted, bool isBuyer)
     {
         var effectiveAccountId = isBuyer ? tradeExecuted.BuyAccountId : tradeExecuted.SellAccountId;
+        var effectiveTradingAccountId = isBuyer
+            ? tradeExecuted.BuyTradingAccountId ?? order.TradingAccountId
+            : tradeExecuted.SellTradingAccountId ?? order.TradingAccountId;
         var account = _accounts.GetOrAdd(effectiveAccountId, accountId => new LedgerAccountState(accountId));
         var adjustments = new List<BalanceAdjusted>();
         var notional = decimal.Round(tradeExecuted.Price * tradeExecuted.Quantity, 8, MidpointRounding.ToZero);
@@ -205,9 +244,10 @@ public sealed class LedgerProjectionStore
             ApplyDelta(effectiveAccountId, order.BaseAsset, quantity, 0m);
             order.OutstandingReserved = decimal.Round(order.OutstandingReserved - notional, 8, MidpointRounding.ToZero);
             order.FilledQuantity = decimal.Round(order.FilledQuantity + quantity, 8, MidpointRounding.ToZero);
+            UpdatePosition(effectiveTradingAccountId, order.InstrumentId, order.Symbol, quantity, tradeExecuted.Price, tradeExecuted.ExecutedAt);
 
-            account.Entries.Insert(0, new LedgerEntry(Guid.NewGuid(), effectiveAccountId, order.QuoteAsset, -notional, LedgerEntryType.TradeSettlement, $"trade:{tradeExecuted.TradeId}", tradeExecuted.ExecutedAt));
-            account.Entries.Insert(0, new LedgerEntry(Guid.NewGuid(), effectiveAccountId, order.BaseAsset, quantity, LedgerEntryType.TradeSettlement, $"trade:{tradeExecuted.TradeId}", tradeExecuted.ExecutedAt));
+            account.Entries.Insert(0, new LedgerEntry(Guid.NewGuid(), effectiveAccountId, order.QuoteAsset, -notional, LedgerEntryType.TradeSettlement, BalanceBucket.Reserved, EntryDirection.Debit, ReferenceType.TradeExecution, tradeExecuted.TradeId, tradeExecuted.ExecutedAt, effectiveTradingAccountId));
+            account.Entries.Insert(0, new LedgerEntry(Guid.NewGuid(), effectiveAccountId, order.BaseAsset, quantity, LedgerEntryType.TradeSettlement, BalanceBucket.Available, EntryDirection.Credit, ReferenceType.TradeExecution, tradeExecuted.TradeId, tradeExecuted.ExecutedAt, effectiveTradingAccountId));
 
             adjustments.Add(new BalanceAdjusted(effectiveAccountId, order.QuoteAsset, 0m, -notional, "TradeSettlementDebit", tradeExecuted.ExecutedAt, order.OrderId, tradeExecuted.TradeId));
             adjustments.Add(new BalanceAdjusted(effectiveAccountId, order.BaseAsset, quantity, 0m, "TradeSettlementCredit", tradeExecuted.ExecutedAt, order.OrderId, tradeExecuted.TradeId));
@@ -218,9 +258,10 @@ public sealed class LedgerProjectionStore
             ApplyDelta(effectiveAccountId, order.QuoteAsset, notional, 0m);
             order.OutstandingReserved = decimal.Round(order.OutstandingReserved - quantity, 8, MidpointRounding.ToZero);
             order.FilledQuantity = decimal.Round(order.FilledQuantity + quantity, 8, MidpointRounding.ToZero);
+            UpdatePosition(effectiveTradingAccountId, order.InstrumentId, order.Symbol, -quantity, tradeExecuted.Price, tradeExecuted.ExecutedAt);
 
-            account.Entries.Insert(0, new LedgerEntry(Guid.NewGuid(), effectiveAccountId, order.BaseAsset, -quantity, LedgerEntryType.TradeSettlement, $"trade:{tradeExecuted.TradeId}", tradeExecuted.ExecutedAt));
-            account.Entries.Insert(0, new LedgerEntry(Guid.NewGuid(), effectiveAccountId, order.QuoteAsset, notional, LedgerEntryType.TradeSettlement, $"trade:{tradeExecuted.TradeId}", tradeExecuted.ExecutedAt));
+            account.Entries.Insert(0, new LedgerEntry(Guid.NewGuid(), effectiveAccountId, order.BaseAsset, -quantity, LedgerEntryType.TradeSettlement, BalanceBucket.Reserved, EntryDirection.Debit, ReferenceType.TradeExecution, tradeExecuted.TradeId, tradeExecuted.ExecutedAt, effectiveTradingAccountId));
+            account.Entries.Insert(0, new LedgerEntry(Guid.NewGuid(), effectiveAccountId, order.QuoteAsset, notional, LedgerEntryType.TradeSettlement, BalanceBucket.Available, EntryDirection.Credit, ReferenceType.TradeExecution, tradeExecuted.TradeId, tradeExecuted.ExecutedAt, effectiveTradingAccountId));
 
             adjustments.Add(new BalanceAdjusted(effectiveAccountId, order.BaseAsset, 0m, -quantity, "TradeSettlementDebit", tradeExecuted.ExecutedAt, order.OrderId, tradeExecuted.TradeId));
             adjustments.Add(new BalanceAdjusted(effectiveAccountId, order.QuoteAsset, notional, 0m, "TradeSettlementCredit", tradeExecuted.ExecutedAt, order.OrderId, tradeExecuted.TradeId));
@@ -229,7 +270,7 @@ public sealed class LedgerProjectionStore
         if (order.FilledQuantity >= order.Quantity && order.OutstandingReserved > 0)
         {
             ApplyDelta(effectiveAccountId, order.ReservedAsset, order.OutstandingReserved, -order.OutstandingReserved);
-            account.Entries.Insert(0, new LedgerEntry(Guid.NewGuid(), effectiveAccountId, order.ReservedAsset, order.OutstandingReserved, LedgerEntryType.Release, $"order:{order.OrderId}", tradeExecuted.ExecutedAt));
+            account.Entries.Insert(0, new LedgerEntry(Guid.NewGuid(), effectiveAccountId, order.ReservedAsset, order.OutstandingReserved, LedgerEntryType.Release, BalanceBucket.Available, EntryDirection.Credit, ReferenceType.Order, order.OrderId.ToString(), tradeExecuted.ExecutedAt, effectiveTradingAccountId));
             adjustments.Add(new BalanceAdjusted(effectiveAccountId, order.ReservedAsset, order.OutstandingReserved, -order.OutstandingReserved, "OrderCompletedRelease", tradeExecuted.ExecutedAt, order.OrderId, tradeExecuted.TradeId));
             order.OutstandingReserved = 0m;
         }
@@ -258,6 +299,27 @@ public sealed class LedgerProjectionStore
             : (symbol.ToUpperInvariant(), "USD");
     }
 
+    private static Guid ResolveTradingAccountId(Guid accountId, Guid? tradingAccountId) =>
+        tradingAccountId ?? DemoSeed.TradingAccounts.First(account => account.AccountId == accountId).TradingAccountId;
+
+    private static Guid ResolveInstrumentId(string symbol, Guid? instrumentId) =>
+        instrumentId ?? DemoSeed.Instruments.First(instrument => instrument.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase)).InstrumentId;
+
+    private void UpdatePosition(Guid tradingAccountId, Guid instrumentId, string symbol, decimal netDelta, decimal tradePrice, DateTimeOffset updatedAt)
+    {
+        var positionDate = DateOnly.FromDateTime(updatedAt.UtcDateTime);
+        var key = PositionKey(tradingAccountId, instrumentId, positionDate);
+        var position = _positions.GetOrAdd(key, _ => new PositionState(Guid.NewGuid(), tradingAccountId, instrumentId, symbol, positionDate, updatedAt));
+        position.NetQuantity = decimal.Round(position.NetQuantity + netDelta, 8, MidpointRounding.ToZero);
+        position.LongQuantity = position.NetQuantity > 0 ? position.NetQuantity : 0m;
+        position.ShortQuantity = position.NetQuantity < 0 ? Math.Abs(position.NetQuantity) : 0m;
+        position.AverageOpenPrice = tradePrice;
+        position.UpdatedAt = updatedAt;
+    }
+
+    private static string PositionKey(Guid tradingAccountId, Guid instrumentId, DateOnly positionDate) =>
+        $"{tradingAccountId:N}:{instrumentId:N}:{positionDate:yyyyMMdd}";
+
     private sealed class LedgerAccountState(Guid accountId)
     {
         public Guid AccountId { get; } = accountId;
@@ -274,6 +336,9 @@ public sealed class LedgerProjectionStore
     private sealed class ReservedOrderState(
         Guid orderId,
         Guid accountId,
+        Guid tradingAccountId,
+        Guid instrumentId,
+        string symbol,
         string baseAsset,
         string quoteAsset,
         string reservedAsset,
@@ -283,6 +348,9 @@ public sealed class LedgerProjectionStore
     {
         public Guid OrderId { get; } = orderId;
         public Guid AccountId { get; } = accountId;
+        public Guid TradingAccountId { get; } = tradingAccountId;
+        public Guid InstrumentId { get; } = instrumentId;
+        public string Symbol { get; } = symbol;
         public string BaseAsset { get; } = baseAsset;
         public string QuoteAsset { get; } = quoteAsset;
         public string ReservedAsset { get; } = reservedAsset;
@@ -290,6 +358,20 @@ public sealed class LedgerProjectionStore
         public decimal Quantity { get; } = quantity;
         public decimal FilledQuantity { get; set; }
         public OrderSide Side { get; } = side;
+    }
+
+    private sealed class PositionState(Guid positionId, Guid tradingAccountId, Guid instrumentId, string symbol, DateOnly positionDate, DateTimeOffset updatedAt)
+    {
+        public Guid PositionId { get; } = positionId;
+        public Guid TradingAccountId { get; } = tradingAccountId;
+        public Guid InstrumentId { get; } = instrumentId;
+        public string Symbol { get; } = symbol;
+        public DateOnly PositionDate { get; } = positionDate;
+        public decimal NetQuantity { get; set; }
+        public decimal? AverageOpenPrice { get; set; }
+        public decimal LongQuantity { get; set; }
+        public decimal ShortQuantity { get; set; }
+        public DateTimeOffset UpdatedAt { get; set; } = updatedAt;
     }
 
     private IReadOnlyCollection<BalanceAdjusted> ApplyPendingEvents(Guid orderId)

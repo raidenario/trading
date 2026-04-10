@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "exchange/contracts/v1/trading-account",
+  "title": "TradingAccount",
+  "type": "object",
+  "required": [
+    "tradingAccountId",
+    "accountId",
+    "participantId",
+    "status",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "tradingAccountId": { "type": "string", "format": "uuid" },
+    "accountId": { "type": "string", "format": "uuid" },
+    "participantId": { "type": "string", "format": "uuid" },
+    "externalAccountCode": { "type": ["string", "null"] },
+    "status": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

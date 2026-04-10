@@ -1,4 +1,5 @@
 using Exchange.Platform.Contracts.Commands;
+using Exchange.Platform.Contracts;
 using Exchange.Trading.Application.Abstractions;
 using Exchange.Trading.Application.Models;
 using Exchange.Trading.Domain.Entities;
@@ -16,20 +17,42 @@ namespace Exchange.Trading.Application.Services;
 
 public sealed class OrderCommandService(
     IOrderRepository orderRepository,
-    IMatchingEngineClient matchingEngineClient) : IOrderCommandService
+    IMatchingEngineClient matchingEngineClient,
+    IInstrumentCatalog instrumentCatalog,
+    ITradingAccountResolver tradingAccountResolver) : IOrderCommandService
 {
     public async Task<CreateOrderResult> CreateAsync(CreateOrderCommand command, CancellationToken cancellationToken)
     {
+        var resolvedInstrument = await instrumentCatalog.ResolveAsync(command.Symbol, command.InstrumentId, cancellationToken);
+        if (resolvedInstrument is null)
+        {
+            return Reject(command.OrderId, "Instrument was not found.");
+        }
+
+        var tradingAccount = await tradingAccountResolver.ResolveByAccountIdAsync(command.AccountId, cancellationToken)
+            ?? throw new InvalidOperationException($"Trading account for account '{command.AccountId}' was not found.");
+        var validation = new InstrumentOrderValidator(instrumentCatalog).Validate(command, resolvedInstrument);
+        if (!validation.IsValid)
+        {
+            return Reject(command.OrderId, validation.Reason ?? "Order rejected by instrument validation.");
+        }
+
+        var symbol = resolvedInstrument.Instrument.Symbol;
+
         var order = Order.Create(
             command.OrderId,
             command.AccountId,
-            new Symbol(command.Symbol),
+            new Symbol(symbol),
             Map(command.Side),
             Map(command.Type),
             new Quantity(command.Quantity),
             command.Price.HasValue ? new Price(command.Price.Value) : null,
             Map(command.TimeInForce),
             command.ClientOrderId,
+            resolvedInstrument.Instrument.InstrumentId,
+            command.TradingAccountId ?? tradingAccount.TradingAccountId,
+            command.SourceSystem,
+            validation.EnrichedExecutionInstructions,
             command.SubmittedAt);
 
         var submission = await matchingEngineClient.SubmitAsync(order, cancellationToken);
@@ -84,4 +107,7 @@ public sealed class OrderCommandService(
         ContractTimeInForce.Fok => DomainTimeInForce.Fok,
         _ => DomainTimeInForce.Gtc
     };
+
+    private static CreateOrderResult Reject(Guid orderId, string reason) =>
+        new(orderId, DomainOrderStatus.Rejected, reason, Array.Empty<Trade>(), null);
 }

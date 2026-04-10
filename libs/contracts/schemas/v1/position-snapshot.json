@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "exchange/contracts/v1/position-snapshot",
+  "title": "PositionSnapshot",
+  "type": "object",
+  "required": [
+    "positionId",
+    "tradingAccountId",
+    "instrumentId",
+    "symbol",
+    "positionDate",
+    "netQuantity",
+    "longQuantity",
+    "shortQuantity",
+    "updatedAt"
+  ],
+  "properties": {
+    "positionId": { "type": "string", "format": "uuid" },
+    "tradingAccountId": { "type": "string", "format": "uuid" },
+    "instrumentId": { "type": "string", "format": "uuid" },
+    "symbol": { "type": "string" },
+    "positionDate": { "type": "string", "format": "date" },
+    "netQuantity": { "type": "number" },
+    "averageOpenPrice": { "type": ["number", "null"] },
+    "longQuantity": { "type": "number", "minimum": 0 },
+    "shortQuantity": { "type": "number", "minimum": 0 },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

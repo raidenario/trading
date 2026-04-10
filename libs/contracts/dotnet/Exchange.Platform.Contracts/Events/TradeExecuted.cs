@@ -10,4 +10,11 @@ public sealed record TradeExecuted(
     decimal Price,
     decimal Quantity,
     DateTimeOffset ExecutedAt,
+    Guid? InstrumentId = null,
+    Guid? BuyTradingAccountId = null,
+    Guid? SellTradingAccountId = null,
+    OrderSide? AggressorSide = null,
+    string TradeSource = "MatchingEngine",
+    string? ExchangeExecutionId = null,
+    Dictionary<string, string>? Metadata = null,
     int SchemaVersion = 1);

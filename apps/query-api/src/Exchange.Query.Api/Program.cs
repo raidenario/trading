@@ -12,6 +12,7 @@ public class Program
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
         });
         builder.Services.AddSingleton<QueryProjectionStore>();
+        builder.Services.AddSingleton<PostgresProjectionWriter>();
         builder.Services.AddHostedService<KafkaProjectionConsumer>();
         builder.Services.AddCors(options =>
         {
@@ -32,14 +33,26 @@ public class Program
         app.MapGet("/api/history/orders", (Guid? accountId, QueryProjectionStore store) =>
             Results.Ok(store.GetOrderHistory(accountId)));
 
+        app.MapGet("/api/orders/enriched", (Guid? accountId, QueryProjectionStore store) =>
+            Results.Ok(store.GetEnrichedOrders(accountId)));
+
         app.MapGet("/api/balances/{accountId:guid}", (Guid accountId, QueryProjectionStore store) =>
             Results.Ok(store.GetBalances(accountId)));
+
+        app.MapGet("/api/instruments", (QueryProjectionStore store) =>
+            Results.Ok(store.GetInstruments()));
+
+        app.MapGet("/api/positions", (Guid? tradingAccountId, QueryProjectionStore store) =>
+            Results.Ok(store.GetPositions(tradingAccountId)));
 
         app.MapGet("/api/markets/{symbol}/ticker", (string symbol, QueryProjectionStore store) =>
             Results.Ok(store.GetTickerWithCandle(symbol)));
 
         app.MapGet("/api/trades/recent", (string? symbol, int? limit, QueryProjectionStore store) =>
             Results.Ok(store.GetRecentTrades(symbol, limit)));
+
+        app.MapGet("/api/trades/enriched", (string? symbol, int? limit, QueryProjectionStore store) =>
+            Results.Ok(store.GetEnrichedTrades(symbol, limit)));
 
         app.MapGet("/api/markets/overview", (QueryProjectionStore store) =>
             Results.Ok(store.GetMarketOverview()));

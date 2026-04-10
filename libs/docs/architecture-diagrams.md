@@ -1,184 +1,121 @@
-# Exchange Platform — Diagramas de Arquitetura
+# Exchange Platform Diagrams
 
-Este documento contém diagramas Mermaid representando os principais aspectos da plataforma.
-
----
-
-## 1. Visão Geral dos Serviços
+## B3-Inspired ER Diagram
 
 ```mermaid
-graph TB
-    subgraph Frontend
-        FE["Frontend React/TS :3000"]
-    end
+erDiagram
+    accounts ||--o{ balances : owns
+    accounts ||--o{ orders : submits
+    accounts ||--o{ ledger_entries : records
+    participants ||--o{ trading_accounts : controls
+    accounts ||--|| trading_accounts : defaults_to
+    instruments ||--o{ orders : referenced_by
+    instruments ||--o{ trade_executions : executed_on
+    trading_accounts ||--o{ orders : routes
+    trading_accounts ||--o{ trade_allocations : receives
+    trade_executions ||--o{ trade_allocations : allocates
+    trading_accounts ||--o{ positions : holds
+    instruments ||--o{ positions : tracked_in
+    trading_accounts ||--o{ settlement_obligations : future
+    trading_accounts ||--o{ risk_snapshots : future
+    participants ||--o{ netting_sets : future
+    instruments ||--o{ custody_movements : future
 
-    subgraph "API Layer (C#)"
-        GW["Gateway API :8080"]
-        QA["Query API :8081"]
-        LS["Ledger Service :8082"]
-    end
-
-    subgraph "Core Engine (Rust)"
-        ME["Matching Engine :7000"]
-    end
-
-    subgraph "Realtime (Elixir)"
-        RT["Realtime Gateway :4000"]
-    end
-
-    subgraph "Tooling (Python)"
-        TL["Market Simulator / Order Flow"]
-    end
-
-    subgraph Infrastructure
-        PG[(PostgreSQL)]
-        RD[(Redis)]
-        KF["Kafka"]
-    end
-
-    FE -->|REST| GW
-    FE -->|REST| QA
-    FE -->|WebSocket| RT
-
-    GW -->|Commands| KF
-    GW --> PG
-    GW --> RD
-
-    KF -->|order-commands| ME
-    ME -->|matching-events| KF
-
-    KF -->|matching-events| LS
-    KF -->|matching-events| QA
-    KF -->|marketdata-events| RT
-
-    LS --> PG
-    QA --> PG
-    QA --> RD
-
-    TL -->|REST| GW
+    accounts {
+      uuid account_id PK
+      string display_name
+    }
+    trading_accounts {
+      uuid trading_account_id PK
+      uuid account_id FK
+      uuid participant_id FK
+      string external_account_code
+      string status
+    }
+    participants {
+      uuid participant_id PK
+      string participant_code
+      string participant_type
+      string status
+    }
+    instruments {
+      uuid instrument_id PK
+      string symbol
+      string asset_class
+      string segment
+      string market
+      string base_asset
+      string quote_asset
+    }
+    orders {
+      uuid order_id PK
+      uuid account_id FK
+      uuid trading_account_id FK
+      uuid instrument_id FK
+      string symbol
+      string status
+    }
+    trade_executions {
+      uuid trade_execution_id PK
+      uuid instrument_id FK
+      uuid buy_order_id FK
+      uuid sell_order_id FK
+      uuid buy_trading_account_id FK
+      uuid sell_trading_account_id FK
+    }
+    trade_allocations {
+      uuid trade_allocation_id PK
+      uuid trade_execution_id FK
+      uuid trading_account_id FK
+      string side
+      string allocation_status
+    }
+    positions {
+      uuid position_id PK
+      uuid trading_account_id FK
+      uuid instrument_id FK
+      date position_date
+      decimal net_quantity
+    }
 ```
 
----
-
-## 2. Fluxo de Criação de Ordem
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant FE as Frontend
-    participant GW as Gateway API
-    participant PG as PostgreSQL
-    participant KF as Kafka
-    participant ME as Matching Engine
-    participant LS as Ledger Service
-    participant RT as Realtime Gateway
-
-    User->>FE: Submete ordem de compra
-    FE->>GW: POST /api/orders
-    GW->>GW: Valida conta e saldo
-    GW->>PG: Persiste ordem (Pending)
-    GW->>KF: Publica em order-commands
-    KF->>ME: Consome comando
-    ME->>ME: Processa order book (FIFO)
-    ME->>KF: Publica TradeExecuted + BookUpdated
-    KF->>LS: Consome TradeExecuted
-    LS->>PG: Atualiza saldos
-    KF->>RT: Consome marketdata-events
-    RT->>FE: Broadcast via WebSocket
-    FE->>User: Atualiza ticker e trades
-```
-
----
-
-## 3. Fluxo de Matching e Ledger
+## Implemented Flow vs Future Target
 
 ```mermaid
 flowchart LR
-    subgraph "Matching Engine (Rust)"
-        OB["Order Book"]
-        MA["Match Algorithm"]
+    FE[Frontend]
+    GW[Gateway API]
+    KF[(Kafka)]
+    ME[Matching Engine]
+    LS[Ledger Service]
+    QA[Query API]
+    RT[Realtime Gateway]
+    PG[(PostgreSQL)]
+
+    FE -->|POST /api/orders| GW
+    GW -->|resolve symbol -> instrument| GW
+    GW -->|resolve account -> trading account| GW
+    GW -->|CreateOrderCommand| KF
+    KF -->|order-commands| ME
+    ME -->|matching-events| KF
+    ME -->|marketdata-events| KF
+    KF --> LS
+    KF --> QA
+    KF --> RT
+    LS -->|balance + position projection| PG
+    QA -->|read models| PG
+
+    subgraph Future_Not_Implemented_Yet
+        CL[Clearing Session]
+        NT[Netting Set]
+        ST[Settlement Batch]
+        RS[Risk Snapshot]
+        CM[Custody Movement]
     end
 
-    subgraph "Ledger (C#)"
-        BA["Balance Check"]
-        RE["Reserve Funds"]
-        SE["Settle Trade"]
-    end
-
-    Order["Nova Ordem"] --> BA
-    BA -->|Saldo OK| RE
-    RE -->|Fundos Reservados| OB
-    OB --> MA
-    MA -->|Trade Executado| SE
-    SE -->|Credita ativo| Balance["Saldo Atualizado"]
-    MA -->|Sem match| Rest["Ordem no Book"]
-```
-
----
-
-## 4. Fluxo de Market Data e Realtime
-
-```mermaid
-flowchart TB
-    ME["Matching Engine"] -->|TradeExecuted| KF["Kafka: marketdata-events"]
-    ME -->|BookUpdated| KF
-    ME -->|TickerUpdated| KF
-
-    KF --> RT["Realtime Gateway (Elixir)"]
-    KF --> QA["Query API"]
-
-    RT -->|Phoenix Channel| WS1["market:BTC-USD"]
-    RT -->|Phoenix Channel| WS2["market:ETH-USD"]
-    RT -->|Phoenix Channel| WS3["market:SOL-USD"]
-
-    WS1 --> FE["Frontend WebSocket"]
-    WS2 --> FE
-    WS3 --> FE
-
-    QA -->|Cache| RD["Redis"]
-    QA -->|Read Models| PG["PostgreSQL"]
-```
-
----
-
-## 5. Separação por Linguagem e Responsabilidade
-
-```mermaid
-graph LR
-    subgraph "C# / .NET"
-        direction TB
-        A1["APIs REST"]
-        A2["Dominio de Ordens"]
-        A3["Contas e Saldos"]
-        A4["Ledger Contabil"]
-        A5["Contratos e Eventos"]
-        A6["Integracao com Infra"]
-    end
-
-    subgraph "Rust"
-        direction TB
-        B1["Order Book em Memoria"]
-        B2["Algoritmo FIFO"]
-        B3["Matching de Trades"]
-        B4["Geracao de Eventos"]
-    end
-
-    subgraph "Elixir"
-        direction TB
-        C1["WebSocket Channels"]
-        C2["Broadcast por Simbolo"]
-        C3["Fanout de Eventos"]
-    end
-
-    subgraph "Python"
-        direction TB
-        D1["Simulador de Mercado GBM"]
-        D2["Gerador de Ordens"]
-        D3["Load Testing"]
-        D4["Replay de Cenarios"]
-    end
-
-    A1 --> B1
-    B4 --> C1
-    D2 --> A1
+    KF -. future trade execution feed .-> CL
+    CL -. future netting .-> NT
+    NT -. future settlement obligation .-> ST
+    KF -. future risk checks .-> RS
+    ST -. future custody instructions .-> CM
 ```

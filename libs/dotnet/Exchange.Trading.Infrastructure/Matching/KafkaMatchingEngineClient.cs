@@ -44,7 +44,11 @@ public sealed class KafkaMatchingEngineClient : IMatchingEngineClient, IDisposab
             order.LimitPrice?.Value,
             (Exchange.Platform.Contracts.TimeInForce)order.TimeInForce,
             order.ClientOrderId,
-            order.CreatedAt);
+            order.CreatedAt,
+            order.InstrumentId,
+            order.TradingAccountId,
+            order.SourceSystem,
+            order.ExecutionInstructions is null ? null : new Dictionary<string, string>(order.ExecutionInstructions));
 
         var payload = JsonSerializer.Serialize(command);
 
@@ -52,7 +56,7 @@ public sealed class KafkaMatchingEngineClient : IMatchingEngineClient, IDisposab
         {
             await _producer.ProduceAsync(Topic, new Message<string, string>
             {
-                Key = order.Symbol.Value, // Particionamento por símbolo garante ordem cronológica por par
+                Key = order.InstrumentId?.ToString() ?? order.Symbol.Value,
                 Value = payload
             }, cancellationToken);
 

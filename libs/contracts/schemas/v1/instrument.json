@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "exchange/contracts/v1/instrument",
+  "title": "Instrument",
+  "type": "object",
+  "required": [
+    "instrumentId",
+    "symbol",
+    "assetClass",
+    "segment",
+    "market",
+    "baseAsset",
+    "quoteAsset",
+    "pricePrecision",
+    "quantityPrecision",
+    "tickSize",
+    "lotSize",
+    "tradingStatus"
+  ],
+  "properties": {
+    "instrumentId": { "type": "string", "format": "uuid" },
+    "symbol": { "type": "string" },
+    "assetClass": { "type": "string" },
+    "segment": { "type": "string" },
+    "market": { "type": "string" },
+    "isin": { "type": ["string", "null"] },
+    "baseAsset": { "type": "string" },
+    "quoteAsset": { "type": "string" },
+    "pricePrecision": { "type": "integer", "minimum": 0 },
+    "quantityPrecision": { "type": "integer", "minimum": 0 },
+    "tickSize": { "type": "number", "exclusiveMinimum": 0 },
+    "lotSize": { "type": "number", "exclusiveMinimum": 0 },
+    "tradingStatus": { "type": "string" },
+    "tradingStartAt": { "type": ["string", "null"], "format": "date-time" },
+    "tradingEndAt": { "type": ["string", "null"], "format": "date-time" },
+    "expirationDate": { "type": ["string", "null"], "format": "date" },
+    "contractMultiplier": { "type": ["number", "null"] },
+    "settlementType": { "type": ["string", "null"] },
+    "deliveryType": { "type": ["string", "null"] },
+    "paymentType": { "type": ["string", "null"] },
+    "metadata": {
+      "type": ["object", "null"],
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

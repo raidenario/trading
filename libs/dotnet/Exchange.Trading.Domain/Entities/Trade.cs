@@ -8,6 +8,9 @@ public sealed class Trade
         Guid tradeId,
         Guid buyOrderId,
         Guid sellOrderId,
+        Guid? instrumentId,
+        Guid? buyTradingAccountId,
+        Guid? sellTradingAccountId,
         Symbol symbol,
         Price price,
         Quantity quantity,
@@ -16,6 +19,9 @@ public sealed class Trade
         TradeId = tradeId;
         BuyOrderId = buyOrderId;
         SellOrderId = sellOrderId;
+        InstrumentId = instrumentId;
+        BuyTradingAccountId = buyTradingAccountId;
+        SellTradingAccountId = sellTradingAccountId;
         Symbol = symbol;
         Price = price;
         Quantity = quantity;
@@ -27,6 +33,12 @@ public sealed class Trade
     public Guid BuyOrderId { get; }
 
     public Guid SellOrderId { get; }
+
+    public Guid? InstrumentId { get; }
+
+    public Guid? BuyTradingAccountId { get; }
+
+    public Guid? SellTradingAccountId { get; }
 
     public Symbol Symbol { get; }
 

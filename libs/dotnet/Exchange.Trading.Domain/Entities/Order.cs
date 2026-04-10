@@ -1,3 +1,4 @@
+using ContractOrderSource = Exchange.Platform.Contracts.OrderSource;
 using Exchange.Trading.Domain.Enums;
 using Exchange.Trading.Domain.ValueObjects;
 
@@ -15,6 +16,10 @@ public sealed class Order
         Price? limitPrice,
         TimeInForce timeInForce,
         string? clientOrderId,
+        Guid? instrumentId,
+        Guid? tradingAccountId,
+        ContractOrderSource sourceSystem,
+        IReadOnlyDictionary<string, string>? executionInstructions,
         DateTimeOffset createdAt)
     {
         OrderId = orderId;
@@ -27,6 +32,10 @@ public sealed class Order
         LimitPrice = limitPrice;
         TimeInForce = timeInForce;
         ClientOrderId = clientOrderId;
+        InstrumentId = instrumentId;
+        TradingAccountId = tradingAccountId;
+        SourceSystem = sourceSystem;
+        ExecutionInstructions = executionInstructions;
         Status = OrderStatus.Pending;
         CreatedAt = createdAt;
         UpdatedAt = createdAt;
@@ -52,15 +61,29 @@ public sealed class Order
 
     public string? ClientOrderId { get; }
 
+    public Guid? InstrumentId { get; }
+
+    public Guid? TradingAccountId { get; }
+
+    public ContractOrderSource SourceSystem { get; }
+
+    public IReadOnlyDictionary<string, string>? ExecutionInstructions { get; }
+
     public OrderStatus Status { get; private set; }
 
     public string? RejectionReason { get; private set; }
+
+    public DateTimeOffset? AcceptedAt { get; private set; }
+
+    public DateTimeOffset? CancelledAt { get; private set; }
 
     public DateTimeOffset CreatedAt { get; }
 
     public DateTimeOffset UpdatedAt { get; private set; }
 
     public decimal FilledQuantity => decimal.Round(OriginalQuantity.Value - RemainingQuantity, 8, MidpointRounding.ToZero);
+
+    public decimal OpenQuantity => RemainingQuantity;
 
     public static Order Create(
         Guid orderId,
@@ -72,6 +95,10 @@ public sealed class Order
         Price? limitPrice,
         TimeInForce timeInForce,
         string? clientOrderId,
+        Guid? instrumentId,
+        Guid? tradingAccountId,
+        ContractOrderSource sourceSystem,
+        IReadOnlyDictionary<string, string>? executionInstructions,
         DateTimeOffset createdAt)
     {
         if (type == OrderType.Limit && limitPrice is null)
@@ -79,7 +106,7 @@ public sealed class Order
             throw new ArgumentException("Limit orders require a price.", nameof(limitPrice));
         }
 
-        return new Order(orderId, accountId, symbol, side, type, quantity, limitPrice, timeInForce, clientOrderId, createdAt);
+        return new Order(orderId, accountId, symbol, side, type, quantity, limitPrice, timeInForce, clientOrderId, instrumentId, tradingAccountId, sourceSystem, executionInstructions, createdAt);
     }
 
     public void Accept(DateTimeOffset acceptedAt)
@@ -90,6 +117,7 @@ public sealed class Order
         }
 
         Status = OrderStatus.Accepted;
+        AcceptedAt = acceptedAt;
         UpdatedAt = acceptedAt;
     }
 
@@ -137,6 +165,7 @@ public sealed class Order
         }
 
         Status = OrderStatus.Cancelled;
+        CancelledAt = cancelledAt;
         UpdatedAt = cancelledAt;
     }
 }

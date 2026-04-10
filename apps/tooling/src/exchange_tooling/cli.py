@@ -16,7 +16,9 @@ import sys
 import time
 
 from .generators import OrderGenerator
+from .instruments import InstrumentCatalog, MarketSession
 from .load_generator import LoadGenerator
+from .market_simulator import build_market_configs
 from .replay import replay_file
 
 
@@ -28,20 +30,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     # fake-order: emit a single fake order payload
     fake_order = subparsers.add_parser("fake-order", help="Emit a single fake order payload")
-    fake_order.add_argument("--symbol", default="BTC-USD")
+    fake_order.add_argument("--symbol")
+    fake_order.add_argument("--asset-class", dest="asset_class")
+    fake_order.add_argument("--book-mode")
+    fake_order.add_argument("--session", choices=["regular", "after-market", "auction", "closed"], default="regular")
 
     # simulate: run continuous market data simulation
     simulate = subparsers.add_parser("simulate", help="Run continuous market data simulation (tickers + candles)")
     simulate.add_argument("--interval", type=float, default=1.0, help="Seconds between ticks")
     simulate.add_argument("--candle-interval", type=int, default=60, help="Seconds per candle")
-    simulate.add_argument("--symbols", default="BTC-USD,ETH-USD,SOL-USD", help="Comma-separated symbols")
+    simulate.add_argument("--symbols", help="Comma-separated symbols")
+    simulate.add_argument("--asset-class", dest="asset_class")
+    simulate.add_argument("--book-mode")
+    simulate.add_argument("--session", choices=["regular", "after-market", "auction", "closed"], default="regular")
 
     # flow: continuous order flow to API
     flow = subparsers.add_parser("flow", help="Send continuous fake orders to the Gateway API")
     flow.add_argument("--endpoint", default="http://localhost:5103")
     flow.add_argument("--rate", type=float, default=2.0, help="Orders per second")
     flow.add_argument("--count", type=int, default=None, help="Total orders (default: infinite)")
-    flow.add_argument("--symbols", default="BTC-USD,ETH-USD,SOL-USD", help="Comma-separated symbols")
+    flow.add_argument("--symbols", help="Comma-separated symbols")
+    flow.add_argument("--asset-class", dest="asset_class")
+    flow.add_argument("--book-mode")
+    flow.add_argument("--session", choices=["regular", "after-market", "auction", "closed"], default="regular")
     flow.add_argument("--dry-run", action="store_true")
 
     # load: fixed-count burst
@@ -49,6 +60,10 @@ def build_parser() -> argparse.ArgumentParser:
     load.add_argument("--endpoint", default="http://localhost:5103")
     load.add_argument("--rate", type=int, default=5)
     load.add_argument("--count", type=int, default=25)
+    load.add_argument("--symbols", help="Comma-separated symbols")
+    load.add_argument("--asset-class", dest="asset_class")
+    load.add_argument("--book-mode")
+    load.add_argument("--session", choices=["regular", "after-market", "auction", "closed"], default="regular")
     load.add_argument("--dry-run", action="store_true")
 
     # replay
@@ -64,23 +79,36 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    session = parse_session(getattr(args, "session", "regular"))
+    legacy_symbols = ("BTC-USD", "ETH-USD", "SOL-USD")
 
     if args.command == "fake-order":
-        generator = OrderGenerator(symbols=(args.symbol,))
+        catalog = InstrumentCatalog.default()
+        symbols = parse_csv(args.symbol) if args.symbol else tuple(["BTC-USD"]) if not args.asset_class and not args.book_mode else None
+        generator = OrderGenerator(
+            catalog=catalog,
+            symbols=symbols,
+            asset_classes=parse_csv(args.asset_class),
+            book_modes=parse_csv(args.book_mode),
+            session=session,
+        )
         print(json.dumps(generator.next_order().to_payload(), indent=2))
         return
 
     if args.command == "simulate":
-        from .market_simulator import PriceEngine, MarketConfig, DEFAULT_MARKETS
+        from .market_simulator import PriceEngine
         from rich.console import Console
-        from rich.live import Live
         from rich.table import Table
 
         console = Console()
-        symbols = [s.strip().upper() for s in args.symbols.split(",")]
-        configs = [m for m in DEFAULT_MARKETS if m.symbol in symbols]
-        if not configs:
-            configs = [MarketConfig(s, 100.0) for s in symbols]
+        requested_symbols = parse_csv(args.symbols) or (legacy_symbols if not args.asset_class and not args.book_mode else None)
+        configs = build_market_configs(
+            symbols=requested_symbols,
+            asset_classes=parse_csv(args.asset_class),
+            book_mode=args.book_mode,
+            session=session,
+        )
+        symbols = [config.symbol for config in configs]
 
         engines = [PriceEngine(config=c) for c in configs]
         candle_counter = 0
@@ -132,10 +160,13 @@ def main() -> None:
 
     if args.command == "flow":
         from .order_flow import run_order_flow
-        symbols = [s.strip().upper() for s in args.symbols.split(",")]
+        requested_symbols = parse_csv(args.symbols) or (legacy_symbols if not args.asset_class and not args.book_mode else None)
         run_order_flow(
             endpoint=args.endpoint,
-            symbols=symbols,
+            symbols=list(requested_symbols) if requested_symbols else None,
+            asset_classes=parse_csv(args.asset_class),
+            book_modes=parse_csv(args.book_mode),
+            session=session,
             rate=args.rate,
             count=args.count,
             dry_run=args.dry_run,
@@ -143,12 +174,32 @@ def main() -> None:
         return
 
     if args.command == "load":
-        LoadGenerator(args.endpoint, args.rate, args.count).run(dry_run=args.dry_run)
+        requested_symbols = parse_csv(args.symbols) or (legacy_symbols if not args.asset_class and not args.book_mode else None)
+        LoadGenerator(
+            args.endpoint,
+            args.rate,
+            args.count,
+            symbols=requested_symbols,
+            asset_classes=parse_csv(args.asset_class),
+            book_modes=parse_csv(args.book_mode),
+            session=session,
+        ).run(dry_run=args.dry_run)
         return
 
     if args.command == "replay":
         replay_file(args.path, args.endpoint, speed=args.speed, dry_run=args.dry_run)
         return
+
+
+def parse_csv(value: str | None) -> tuple[str, ...] | None:
+    if not value:
+        return None
+    return tuple(item.strip().upper() for item in value.split(",") if item.strip())
+
+
+def parse_session(value: str) -> MarketSession:
+    normalized = value.replace("-", "_").upper()
+    return MarketSession[normalized]
 
 
 if __name__ == "__main__":

@@ -5,8 +5,11 @@ import time
 from pathlib import Path
 from urllib import request
 
+from .instruments import InstrumentCatalog
+
 
 def replay_file(path: str, endpoint: str, speed: float = 1.0, dry_run: bool = False) -> None:
+    catalog = InstrumentCatalog.default()
     entries = []
     replay_path = Path(path)
 
@@ -22,9 +25,9 @@ def replay_file(path: str, endpoint: str, speed: float = 1.0, dry_run: bool = Fa
         previous_offset = offset
         time.sleep(wait_time)
 
-        payload = json.dumps(entry["order"]).encode("utf-8")
+        payload = json.dumps(catalog.normalize_payload(entry["order"])).encode("utf-8")
         if dry_run:
-            print(json.dumps(entry))
+            print(payload.decode("utf-8"))
             continue
 
         req = request.Request(

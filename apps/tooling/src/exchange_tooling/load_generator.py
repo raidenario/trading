@@ -6,15 +6,32 @@ from collections.abc import Iterator
 from urllib import error, request
 
 from .generators import OrderGenerator
+from .instruments import InstrumentCatalog, MarketSession
 from .models import OrderRequest
 
 
 class LoadGenerator:
-    def __init__(self, endpoint: str, rate_per_second: int, total_orders: int) -> None:
+    def __init__(
+        self,
+        endpoint: str,
+        rate_per_second: int,
+        total_orders: int,
+        *,
+        symbols: tuple[str, ...] | None = None,
+        asset_classes: tuple[str, ...] | None = None,
+        book_modes: tuple[str, ...] | None = None,
+        session: MarketSession = MarketSession.REGULAR,
+    ) -> None:
         self.endpoint = endpoint.rstrip("/")
         self.rate_per_second = max(rate_per_second, 1)
         self.total_orders = max(total_orders, 1)
-        self.generator = OrderGenerator()
+        self.generator = OrderGenerator(
+            catalog=InstrumentCatalog.default(),
+            symbols=symbols,
+            asset_classes=asset_classes,
+            book_modes=book_modes,
+            session=session,
+        )
 
     def generate(self) -> Iterator[OrderRequest]:
         for _ in range(self.total_orders):

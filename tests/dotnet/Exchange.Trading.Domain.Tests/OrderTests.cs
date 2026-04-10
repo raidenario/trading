@@ -1,3 +1,4 @@
+using ContractOrderSource = Exchange.Platform.Contracts.OrderSource;
 using Exchange.Trading.Domain.Entities;
 using Exchange.Trading.Domain.Enums;
 using Exchange.Trading.Domain.ValueObjects;
@@ -19,6 +20,10 @@ public sealed class OrderTests
             new Quantity(1.5m),
             new Price(50000m),
             TimeInForce.Gtc,
+            null,
+            null,
+            null,
+            ContractOrderSource.Api,
             null,
             DateTimeOffset.UtcNow);
 

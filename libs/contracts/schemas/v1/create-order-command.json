@@ -14,6 +14,14 @@
     "price": { "type": ["number", "null"], "exclusiveMinimum": 0 },
     "timeInForce": { "type": "string", "enum": ["Gtc", "Ioc", "Fok"] },
     "clientOrderId": { "type": ["string", "null"] },
+    "instrumentId": { "type": ["string", "null"], "format": "uuid" },
+    "tradingAccountId": { "type": ["string", "null"], "format": "uuid" },
+    "sourceSystem": { "type": "string", "enum": ["Api", "Web", "Simulator", "Admin"] },
+    "executionInstructions": {
+      "type": ["object", "null"],
+      "additionalProperties": { "type": "string" }
+    },
+    "stopPrice": { "type": ["number", "null"], "exclusiveMinimum": 0 },
     "submittedAt": { "type": "string", "format": "date-time" },
     "schemaVersion": { "type": "integer", "const": 1 }
   }
