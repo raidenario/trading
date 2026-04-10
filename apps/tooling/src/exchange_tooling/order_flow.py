@@ -82,11 +82,14 @@ def run_order_flow(
                     try:
                         resp = client.post(f"{endpoint}/api/orders", json=payload)  # type: ignore
                         status_icon = "[green]OK[/green]" if resp.status_code < 400 else f"[red]{resp.status_code}[/red]"
+                        reason = ""
+                        if resp.status_code >= 400:
+                            reason = _extract_error_reason(resp)
                         console.print(
                             f"[dim]{sent+1:>5}[/dim] {status_icon} "
                             f"[cyan]{payload['side']:>4}[/cyan] "
                             f"{payload['quantity']:>8.4f} {payload['symbol']} @ {payload['price']:>12.2f} "
-                            f"[dim]({owner})[/dim]")
+                            f"[dim]({owner})[/dim]{reason}")
                     except httpx.RequestError as e:
                         console.print(f"[red]ERROR[/red] {e}")
 
@@ -98,3 +101,16 @@ def run_order_flow(
     finally:
         if client:
             client.close()
+
+
+def _extract_error_reason(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        return ""
+
+    reason = payload.get("reason") if isinstance(payload, dict) else None
+    if not reason and isinstance(payload, dict):
+        reason = payload.get("title") or payload.get("detail")
+
+    return f" [red]- {reason}[/red]" if reason else ""

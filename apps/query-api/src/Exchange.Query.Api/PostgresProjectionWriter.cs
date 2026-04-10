@@ -15,6 +15,7 @@ public sealed class PostgresProjectionWriter : IAsyncDisposable
     private readonly Dictionary<string, TradeExecuted> _pendingTrades = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<Guid, HashSet<string>> _pendingTradesByOrder = [];
     private readonly HashSet<Guid> _knownOrders = [];
+    private ProjectionSchemaCapabilities? _schemaCapabilities;
 
     public PostgresProjectionWriter(IConfiguration configuration, ILogger<PostgresProjectionWriter> logger)
     {
@@ -48,6 +49,7 @@ public sealed class PostgresProjectionWriter : IAsyncDisposable
 
     public async Task UpsertOrderAsync(CreateOrderCommand command, CancellationToken cancellationToken)
     {
+        var capabilities = await EnsureSchemaCapabilitiesAsync(cancellationToken);
         var mutation = _pendingOrderMutations.TryGetValue(command.OrderId, out var pending)
             ? pending
             : null;
@@ -58,42 +60,7 @@ public sealed class PostgresProjectionWriter : IAsyncDisposable
         var updatedAt = mutation?.UpdatedAt ?? command.SubmittedAt;
         var rejectionReason = mutation?.RejectionReason;
 
-        await using var commandDb = _dataSource.CreateCommand(
-            """
-            INSERT INTO orders (
-                order_id, account_id, symbol, side, order_type, time_in_force,
-                quantity, limit_price, filled_quantity, remaining_quantity,
-                status, rejection_reason, client_order_id, instrument_id,
-                trading_account_id, source_system, execution_instructions, stop_price,
-                created_at, updated_at
-            )
-            VALUES (
-                @order_id, @account_id, @symbol, @side, @order_type, @time_in_force,
-                @quantity, @limit_price, @filled_quantity, @remaining_quantity,
-                @status, @rejection_reason, @client_order_id, @instrument_id,
-                @trading_account_id, @source_system, @execution_instructions, @stop_price,
-                @created_at, @updated_at
-            )
-            ON CONFLICT (order_id) DO UPDATE
-            SET account_id = EXCLUDED.account_id,
-                symbol = EXCLUDED.symbol,
-                side = EXCLUDED.side,
-                order_type = EXCLUDED.order_type,
-                time_in_force = EXCLUDED.time_in_force,
-                quantity = EXCLUDED.quantity,
-                limit_price = EXCLUDED.limit_price,
-                filled_quantity = EXCLUDED.filled_quantity,
-                remaining_quantity = EXCLUDED.remaining_quantity,
-                status = EXCLUDED.status,
-                rejection_reason = EXCLUDED.rejection_reason,
-                client_order_id = EXCLUDED.client_order_id,
-                instrument_id = EXCLUDED.instrument_id,
-                trading_account_id = EXCLUDED.trading_account_id,
-                source_system = EXCLUDED.source_system,
-                execution_instructions = EXCLUDED.execution_instructions,
-                stop_price = EXCLUDED.stop_price,
-                updated_at = EXCLUDED.updated_at;
-            """);
+        await using var commandDb = _dataSource.CreateCommand(ProjectionSchemaSqlBuilder.BuildUpsertOrderSql(capabilities));
 
         commandDb.Parameters.AddWithValue("order_id", command.OrderId);
         commandDb.Parameters.AddWithValue("account_id", command.AccountId);
@@ -108,11 +75,15 @@ public sealed class PostgresProjectionWriter : IAsyncDisposable
         commandDb.Parameters.AddWithValue("status", status);
         commandDb.Parameters.AddWithValue("rejection_reason", (object?)rejectionReason ?? DBNull.Value);
         commandDb.Parameters.AddWithValue("client_order_id", (object?)command.ClientOrderId ?? DBNull.Value);
-        commandDb.Parameters.AddWithValue("instrument_id", (object?)command.InstrumentId ?? DBNull.Value);
-        commandDb.Parameters.AddWithValue("trading_account_id", (object?)command.TradingAccountId ?? DBNull.Value);
-        commandDb.Parameters.AddWithValue("source_system", command.SourceSystem.ToString());
-        commandDb.Parameters.AddWithValue("execution_instructions", command.ExecutionInstructions is null ? DBNull.Value : JsonSerializer.Serialize(command.ExecutionInstructions));
-        commandDb.Parameters.AddWithValue("stop_price", (object?)command.StopPrice ?? DBNull.Value);
+        if (capabilities.SupportsExtendedOrders)
+        {
+            commandDb.Parameters.AddWithValue("instrument_id", (object?)command.InstrumentId ?? DBNull.Value);
+            commandDb.Parameters.AddWithValue("trading_account_id", (object?)command.TradingAccountId ?? DBNull.Value);
+            commandDb.Parameters.AddWithValue("source_system", command.SourceSystem.ToString());
+            commandDb.Parameters.AddWithValue("execution_instructions", command.ExecutionInstructions is null ? DBNull.Value : JsonSerializer.Serialize(command.ExecutionInstructions));
+            commandDb.Parameters.AddWithValue("stop_price", (object?)command.StopPrice ?? DBNull.Value);
+        }
+
         commandDb.Parameters.AddWithValue("created_at", command.SubmittedAt.UtcDateTime);
         commandDb.Parameters.AddWithValue("updated_at", updatedAt.UtcDateTime);
         await commandDb.ExecuteNonQueryAsync(cancellationToken);
@@ -173,6 +144,7 @@ public sealed class PostgresProjectionWriter : IAsyncDisposable
 
     private async Task PersistTradeAsync(TradeExecuted tradeExecuted, CancellationToken cancellationToken)
     {
+        var capabilities = await EnsureSchemaCapabilitiesAsync(cancellationToken);
         var tradeId = DeterministicGuid($"trade:{tradeExecuted.TradeId}");
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
@@ -197,7 +169,8 @@ public sealed class PostgresProjectionWriter : IAsyncDisposable
             await tradeCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        if (tradeExecuted.InstrumentId.HasValue &&
+        if (capabilities.SupportsTradeExecutions &&
+            tradeExecuted.InstrumentId.HasValue &&
             tradeExecuted.BuyTradingAccountId.HasValue &&
             tradeExecuted.SellTradingAccountId.HasValue)
         {
@@ -211,7 +184,7 @@ public sealed class PostgresProjectionWriter : IAsyncDisposable
                 VALUES (
                     @trade_execution_id, @trade_execution_code, @instrument_id,
                     @buy_order_id, @sell_order_id, @buy_trading_account_id, @sell_trading_account_id,
-                    @quantity, @price, @executed_at, @aggressor_side, @trade_source, @exchange_execution_id, @metadata
+                    @quantity, @price, @executed_at, @aggressor_side, @trade_source, @exchange_execution_id, @metadata::jsonb
                 )
                 ON CONFLICT (trade_execution_id) DO NOTHING;
                 """,
@@ -392,6 +365,62 @@ public sealed class PostgresProjectionWriter : IAsyncDisposable
         }
 
         return false;
+    }
+
+    private async Task<ProjectionSchemaCapabilities> EnsureSchemaCapabilitiesAsync(CancellationToken cancellationToken)
+    {
+        if (_schemaCapabilities is not null)
+        {
+            return _schemaCapabilities;
+        }
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+
+        var orderColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using (var command = new NpgsqlCommand(
+                         """
+                         SELECT column_name
+                         FROM information_schema.columns
+                         WHERE table_schema = 'public' AND table_name = 'orders';
+                         """,
+                         connection))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                orderColumns.Add(reader.GetString(0));
+            }
+        }
+
+        var supportsTradeExecutions = false;
+        await using (var command = new NpgsqlCommand(
+                         """
+                         SELECT EXISTS (
+                             SELECT 1
+                             FROM information_schema.tables
+                             WHERE table_schema = 'public' AND table_name = 'trade_executions'
+                         );
+                         """,
+                         connection))
+        {
+            supportsTradeExecutions = (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+        }
+
+        _schemaCapabilities = new ProjectionSchemaCapabilities(
+            ProjectionSchemaSqlBuilder.SupportsExtendedOrders(orderColumns),
+            supportsTradeExecutions);
+
+        if (!_schemaCapabilities.SupportsExtendedOrders)
+        {
+            _logger.LogWarning("Query API detected legacy orders schema in PostgreSQL. B3 runtime columns will be skipped until migration 002 is applied.");
+        }
+
+        if (!_schemaCapabilities.SupportsTradeExecutions)
+        {
+            _logger.LogWarning("Query API detected missing trade_executions table in PostgreSQL. Enriched trade execution persistence will be skipped until migration 002 is applied.");
+        }
+
+        return _schemaCapabilities;
     }
 
     private static Guid DeterministicGuid(string value)

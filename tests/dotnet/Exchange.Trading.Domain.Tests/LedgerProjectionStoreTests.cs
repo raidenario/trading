@@ -70,4 +70,48 @@ public sealed class LedgerProjectionStoreTests
         Assert.Contains(sellerPositions, position => position.InstrumentId == instrument.InstrumentId && position.NetQuantity == -1m);
         Assert.Contains(buyerLedger!.Entries, entry => entry.ReferenceType == ReferenceType.TradeExecution && entry.ReferenceId == "trade-0001");
     }
+
+    [Fact]
+    public void Apply_create_order_resolves_reserved_asset_from_instrument_catalog_for_new_books()
+    {
+        var store = new LedgerProjectionStore();
+        var accountId = DemoSeed.Accounts.First().AccountId;
+        var tradingAccountId = DemoSeed.TradingAccounts.First(x => x.AccountId == accountId).TradingAccountId;
+        var equity = DemoSeed.Instruments.First(x => x.Symbol == "PETR4");
+        var bdr = DemoSeed.Instruments.First(x => x.Symbol == "MSFT34");
+
+        store.Apply(new CreateOrderCommand(
+            Guid.NewGuid(),
+            accountId,
+            equity.Symbol,
+            OrderSide.Buy,
+            OrderType.Limit,
+            100m,
+            37.10m,
+            TimeInForce.Gtc,
+            null,
+            DateTimeOffset.UtcNow,
+            InstrumentId: equity.InstrumentId,
+            TradingAccountId: tradingAccountId));
+
+        store.Apply(new CreateOrderCommand(
+            Guid.NewGuid(),
+            accountId,
+            bdr.Symbol,
+            OrderSide.Sell,
+            OrderType.Limit,
+            10m,
+            61.70m,
+            TimeInForce.Gtc,
+            null,
+            DateTimeOffset.UtcNow,
+            InstrumentId: bdr.InstrumentId,
+            TradingAccountId: tradingAccountId));
+
+        var balances = store.GetBalances(accountId);
+
+        Assert.Contains(balances, balance => balance.Asset == "BRL" && balance.Locked >= 3710m);
+        Assert.Contains(balances, balance => balance.Asset == "MSFT" && balance.Locked >= 10m);
+        Assert.DoesNotContain(balances, balance => balance.Asset == "MSFT34" && balance.Locked > 0m);
+    }
 }

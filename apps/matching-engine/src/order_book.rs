@@ -12,6 +12,8 @@ pub struct BookLevel {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BookSnapshot {
+    pub book_key: String,
+    pub instrument_id: Option<String>,
     pub symbol: String,
     pub bids: Vec<BookLevel>,
     pub asks: Vec<BookLevel>,
@@ -26,14 +28,22 @@ pub struct MatchOutcome {
 
 #[derive(Debug, Clone)]
 pub struct OrderBook {
+    pub book_key: String,
+    pub instrument_id: Option<String>,
     pub symbol: String,
     bids: BTreeMap<u64, PriceLevel>,
     asks: BTreeMap<u64, PriceLevel>,
 }
 
 impl OrderBook {
-    pub fn new(symbol: impl Into<String>) -> Self {
+    pub fn new(
+        book_key: impl Into<String>,
+        symbol: impl Into<String>,
+        instrument_id: Option<String>,
+    ) -> Self {
         Self {
+            book_key: book_key.into(),
+            instrument_id,
             symbol: symbol.into(),
             bids: BTreeMap::new(),
             asks: BTreeMap::new(),
@@ -145,6 +155,8 @@ impl OrderBook {
             .collect();
 
         BookSnapshot {
+            book_key: self.book_key.clone(),
+            instrument_id: self.instrument_id.clone(),
             symbol: self.symbol.clone(),
             bids,
             asks,

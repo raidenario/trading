@@ -33,6 +33,7 @@ class OrderRequest:
         time_in_force: str = "Gtc",
         client_order_suffix: str | None = None,
         execution_instructions: dict[str, str] | None = None,
+        submitted_at: str | None = None,
     ) -> "OrderRequest":
         return cls(
             order_id=str(uuid4()),
@@ -44,7 +45,7 @@ class OrderRequest:
             quantity=quantity,
             price=price,
             time_in_force=time_in_force,
-            submitted_at=datetime.now(UTC).isoformat(),
+            submitted_at=submitted_at or datetime.now(UTC).isoformat(),
             client_order_id=f"sim-{client_order_suffix}-{uuid4().hex[:6]}" if client_order_suffix else f"sim-{uuid4().hex[:8]}",
             execution_instructions=execution_instructions,
         )

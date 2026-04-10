@@ -67,7 +67,9 @@ public sealed class LedgerProjectionStore
         }
 
         var account = _accounts.GetOrAdd(command.AccountId, accountId => new LedgerAccountState(accountId));
-        var (baseAsset, quoteAsset) = SplitSymbol(command.Symbol);
+        var instrument = ResolveInstrument(command.Symbol, command.InstrumentId);
+        var baseAsset = instrument.BaseAsset.ToUpperInvariant();
+        var quoteAsset = instrument.QuoteAsset.ToUpperInvariant();
         var reservedAsset = command.Side == OrderSide.Buy ? quoteAsset : baseAsset;
         var reservedAmount = command.Side == OrderSide.Buy
             ? decimal.Round((command.Price ?? 0m) * command.Quantity, 8, MidpointRounding.ToZero)
@@ -82,7 +84,7 @@ public sealed class LedgerProjectionStore
             command.OrderId,
             command.AccountId,
             ResolveTradingAccountId(command.AccountId, command.TradingAccountId),
-            ResolveInstrumentId(command.Symbol, command.InstrumentId),
+            instrument.InstrumentId,
             command.Symbol,
             baseAsset,
             quoteAsset,
@@ -291,19 +293,18 @@ public sealed class LedgerProjectionStore
         balance.Reserved = decimal.Round(balance.Reserved + reservedDelta, 8, MidpointRounding.ToZero);
     }
 
-    private static (string BaseAsset, string QuoteAsset) SplitSymbol(string symbol)
-    {
-        var parts = symbol.Split('-', 2, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length == 2
-            ? (parts[0].ToUpperInvariant(), parts[1].ToUpperInvariant())
-            : (symbol.ToUpperInvariant(), "USD");
-    }
-
     private static Guid ResolveTradingAccountId(Guid accountId, Guid? tradingAccountId) =>
         tradingAccountId ?? DemoSeed.TradingAccounts.First(account => account.AccountId == accountId).TradingAccountId;
 
-    private static Guid ResolveInstrumentId(string symbol, Guid? instrumentId) =>
-        instrumentId ?? DemoSeed.Instruments.First(instrument => instrument.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase)).InstrumentId;
+    private static Instrument ResolveInstrument(string symbol, Guid? instrumentId)
+    {
+        if (instrumentId.HasValue)
+        {
+            return DemoSeed.Instruments.First(instrument => instrument.InstrumentId == instrumentId.Value);
+        }
+
+        return DemoSeed.Instruments.First(instrument => instrument.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase));
+    }
 
     private void UpdatePosition(Guid tradingAccountId, Guid instrumentId, string symbol, decimal netDelta, decimal tradePrice, DateTimeOffset updatedAt)
     {

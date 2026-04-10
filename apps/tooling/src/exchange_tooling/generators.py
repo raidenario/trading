@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 from .instruments import InstrumentCatalog, InstrumentDefinition, MarketSession, quantize_step
 from .models import OrderRequest
@@ -56,6 +57,7 @@ class OrderGenerator:
             price=price,
             order_type=order_type,
             execution_instructions=self._execution_instructions(instrument),
+            submitted_at=self._submitted_at(),
         )
 
     def next_crossing_pair(self) -> tuple[OrderRequest, ...]:
@@ -77,7 +79,8 @@ class OrderGenerator:
             quantity=quantity,
             price=price,
             client_order_suffix=f"{maker.name.lower().split()[0]}-maker",
-            execution_instructions=self._execution_instructions(instrument))
+            execution_instructions=self._execution_instructions(instrument),
+            submitted_at=self._submitted_at(0))
 
         taker_order = OrderRequest.create(
             account_id=taker.account_id,
@@ -87,7 +90,8 @@ class OrderGenerator:
             quantity=quantity,
             price=price,
             client_order_suffix=f"{taker.name.lower().split()[0]}-taker",
-            execution_instructions=self._execution_instructions(instrument))
+            execution_instructions=self._execution_instructions(instrument),
+            submitted_at=self._submitted_at(2))
 
         # Injeta ocasionalmente uma ordem passiva do terceiro usuario para manter os tres participantes vivos no book.
         if random.random() < 0.35:
@@ -102,7 +106,8 @@ class OrderGenerator:
                 quantity=observer_quantity,
                 price=observer_price,
                 client_order_suffix=f"{observer.name.lower().split()[0]}-observer",
-                execution_instructions=self._execution_instructions(instrument))
+                execution_instructions=self._execution_instructions(instrument),
+                submitted_at=self._submitted_at(1))
             return maker_order, observer_order, taker_order
 
         return maker_order, taker_order
@@ -150,3 +155,13 @@ class OrderGenerator:
             "assetClass": instrument.asset_class,
             "market": instrument.market,
         }
+
+    def _submitted_at(self, offset_seconds: int = 0) -> str:
+        base_time = {
+            MarketSession.REGULAR: datetime(2026, 4, 10, 15, 0, 0, tzinfo=UTC),
+            MarketSession.AFTER_MARKET: datetime(2026, 4, 10, 20, 30, 0, tzinfo=UTC),
+            MarketSession.AUCTION: datetime(2026, 4, 10, 12, 50, 0, tzinfo=UTC),
+            MarketSession.CLOSED: datetime(2026, 4, 10, 22, 0, 0, tzinfo=UTC),
+        }[self.session]
+        submitted_at = base_time + timedelta(seconds=self._rotation + offset_seconds)
+        return submitted_at.isoformat().replace("+00:00", "Z")

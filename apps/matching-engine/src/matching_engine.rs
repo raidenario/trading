@@ -19,11 +19,12 @@ impl MatchingEngine {
         self.order_sequence += 1;
         let symbol = order.symbol.clone();
         let routing_key = Self::routing_key(&order);
+        let instrument_id = order.instrument_id.clone();
         let sequenced_order = order.prepare_for_matching(self.order_sequence);
         let book = self
             .books
             .entry(routing_key)
-            .or_insert_with(|| OrderBook::new(symbol));
+            .or_insert_with_key(|key| OrderBook::new(key.clone(), symbol, instrument_id));
 
         book.submit(sequenced_order, &mut self.trade_sequence)
     }
@@ -265,5 +266,30 @@ mod tests {
         assert!(second.trades.is_empty());
         assert!(engine.snapshot_by_key("inst-petr4-cash").is_some());
         assert!(engine.snapshot_by_key("inst-petr4-fractional|SpotFractional").is_some());
+    }
+
+    #[test]
+    fn snapshot_carries_instrument_routing_metadata() {
+        let mut engine = MatchingEngine::new();
+
+        let order = serde_json::from_str::<Order>(r#"{
+            "OrderId":"buy-1",
+            "AccountId":"acct-buy",
+            "InstrumentId":"inst-petr4-fractional",
+            "Symbol":"PETR4",
+            "Side":1,
+            "Type":1,
+            "Quantity":10.0,
+            "Price":37.10,
+            "TimeInForce":1,
+            "ExecutionInstructions":{"bookProfile":"SpotFractional","separateBook":"true"},
+            "SchemaVersion":1
+        }"#).expect("instrument order");
+
+        let result = engine.submit(order);
+
+        assert_eq!(result.snapshot.instrument_id.as_deref(), Some("inst-petr4-fractional"));
+        assert_eq!(result.snapshot.book_key, "inst-petr4-fractional|SpotFractional");
+        assert_eq!(result.snapshot.symbol, "PETR4");
     }
 }

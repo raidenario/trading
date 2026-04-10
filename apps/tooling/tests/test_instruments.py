@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime
 
 from exchange_tooling.generators import OrderGenerator
 from exchange_tooling.instruments import InstrumentCatalog, MarketSession
@@ -45,6 +46,28 @@ class InstrumentCatalogTests(unittest.TestCase):
             self.assertIn(order.symbol, {"AAPL34", "MSFT34"})
             validation = catalog.validate_payload(order.to_payload(), session=MarketSession.AFTER_MARKET)
             self.assertTrue(validation.is_valid, validation.reason)
+
+    def test_generator_stamps_submitted_at_inside_requested_session_window(self) -> None:
+        catalog = InstrumentCatalog.default()
+
+        regular_order = OrderGenerator(
+            catalog=catalog,
+            symbols=("PETR4",),
+            session=MarketSession.REGULAR,
+        ).next_order()
+        regular_time = datetime.fromisoformat(regular_order.submitted_at.replace("Z", "+00:00")).time()
+
+        after_market_order = OrderGenerator(
+            catalog=catalog,
+            symbols=("MSFT34",),
+            session=MarketSession.AFTER_MARKET,
+        ).next_order()
+        after_market_time = datetime.fromisoformat(after_market_order.submitted_at.replace("Z", "+00:00")).time()
+
+        self.assertGreaterEqual((regular_time.hour, regular_time.minute), (13, 0))
+        self.assertLess((regular_time.hour, regular_time.minute), (20, 0))
+        self.assertGreaterEqual((after_market_time.hour, after_market_time.minute), (20, 0))
+        self.assertLess((after_market_time.hour, after_market_time.minute), (21, 30))
 
 
 if __name__ == "__main__":

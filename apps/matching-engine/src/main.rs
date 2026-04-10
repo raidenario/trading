@@ -89,6 +89,8 @@ struct TradeExecutedEvent {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
 struct BookUpdatedEvent {
+    instrument_id: Option<String>,
+    book_key: String,
     symbol: String,
     bids: Vec<BookLevelDto>,
     asks: Vec<BookLevelDto>,
@@ -107,6 +109,8 @@ struct BookLevelDto {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "PascalCase")]
 struct TickerUpdatedEvent {
+    instrument_id: Option<String>,
+    book_key: String,
     symbol: String,
     last_price: f64,
     best_bid: f64,
@@ -244,6 +248,7 @@ async fn main() {
 
                         for trade in outcome.trades {
                             let trade_symbol = trade.symbol.clone();
+                            let trade_key = trade.instrument_id.clone().unwrap_or_else(|| trade_symbol.clone());
                             last_trade_price = Some(ticks_to_decimal(trade.price));
                             traded_volume += ticks_to_decimal(trade.quantity);
 
@@ -258,7 +263,7 @@ async fn main() {
                             publish_event(
                                 &producer,
                                 MATCHING_EVENTS_TOPIC,
-                                &trade_symbol.clone(),
+                                &trade_key,
                                 "TradeExecuted",
                                 TradeExecutedEvent {
                                     trade_id: trade.trade_id,
@@ -281,9 +286,11 @@ async fn main() {
                         publish_event(
                             &producer,
                             MARKETDATA_EVENTS_TOPIC,
-                            &outcome.snapshot.symbol,
+                            &outcome.snapshot.book_key,
                             "BookUpdated",
                             BookUpdatedEvent {
+                                instrument_id: outcome.snapshot.instrument_id.clone(),
+                                book_key: outcome.snapshot.book_key.clone(),
                                 symbol: outcome.snapshot.symbol.clone(),
                                 bids: outcome.snapshot.bids.iter().map(|level| BookLevelDto {
                                     price: ticks_to_decimal(level.price),
@@ -307,9 +314,11 @@ async fn main() {
                             publish_event(
                                 &producer,
                                 MARKETDATA_EVENTS_TOPIC,
-                                &outcome.snapshot.symbol,
+                                &outcome.snapshot.book_key,
                                 "TickerUpdated",
                                 TickerUpdatedEvent {
+                                    instrument_id: outcome.snapshot.instrument_id.clone(),
+                                    book_key: outcome.snapshot.book_key.clone(),
                                     symbol: outcome.snapshot.symbol.clone(),
                                     last_price: last_trade_price,
                                     best_bid,
