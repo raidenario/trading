@@ -143,6 +143,8 @@ O schema é composto por 3 migrations incrementais:
 
 Todas as migrations são executadas automaticamente pelo Docker Compose via `initdb.d`.
 
+Para a visão consolidada do schema atual, veja [schema.md](libs/docs/schema.md).
+
 ---
 
 ## Contas Demo (Seed)
@@ -307,19 +309,18 @@ Os tópicos são criados automaticamente pelo container `kafka-init` no Docker C
 
 ## Testes
 
-O projeto possui suítes de teste organizadas em `tests/dotnet/`:
+A regressão automatizada atual está consolidada em `tests/dotnet/Exchange.Trading.Domain.Tests` e cobre:
 
-| Projeto de Teste | Alvo |
-|-----------------|------|
-| `Exchange.Trading.Domain.Tests` | Entidades, Value Objects e regras de domínio |
-| `Exchange.Trading.Application.Tests` | Serviços de aplicação (ordens, contas) |
-| `Exchange.Platform.Contracts.Tests` | Contratos e serialização |
-| `Exchange.Query.Api.Tests` | Projeções e endpoints de leitura |
-| `Exchange.Ledger.Api.Tests` | Processamento de ledger |
-| `Exchange.Database.Tests` | Migrations e schema |
+- resolução `symbol -> instrument_id`
+- provisionamento/resolução automática de `trading_account`
+- persistência enriquecida de ordens
+- compatibilidade de contratos legados e enriquecidos
+- projeções de `TradeExecuted`, `positions`, ledger e replay
+- compatibilidade dos pares `BTC-USD`, `ETH-USD` e `SOL-USD`
+- validação textual das migrations e do seed do schema
 
 ```bash
-dotnet test ExchangePlatform.slnx
+dotnet test tests/dotnet/Exchange.Trading.Domain.Tests/Exchange.Trading.Domain.Tests.csproj
 ```
 
 ---
@@ -362,7 +363,7 @@ infra/
   docker/             # Dockerfiles (7 serviços)
   postgres/           # SQL migrations (001, 002, 003) e seed
 tests/
-  dotnet/             # Testes unitários e de integração (6 projetos)
+  dotnet/             # Suíte consolidada de regressão .NET
 ```
 
 ---
@@ -402,6 +403,7 @@ tests/
 ## Documentação
 
 - [Arquitetura detalhada](libs/docs/architecture.md)
+- [Guia de schema](libs/docs/schema.md)
 - [Diagramas Mermaid](libs/docs/architecture-diagrams.md)
 - [ADR-0002: Defer Clearing/Settlement](libs/docs/adr-0002-defer-clearing-settlement.md)
 - [Tópicos Kafka](libs/docs/kafka-topics.md)

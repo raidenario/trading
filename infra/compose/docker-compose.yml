@@ -125,6 +125,8 @@ services:
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=exchange;Username=exchange;Password=exchange"
       ConnectionStrings__Redis: "redis:6379"
       Kafka__BootstrapServers: "kafka:9092"
+      RealtimeGateway__BaseUrl: "http://realtime-gateway:4000"
+      RealtimeGateway__Enabled: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -132,6 +134,8 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+      realtime-gateway:
+        condition: service_started
 
   ledger-service:
     build:
@@ -173,7 +177,6 @@ services:
       PHX_SERVER: "true"
       SECRET_KEY_BASE: "xL7x2kZ9qB8nR5vF3gH1jK4mP6wT0yA9cE2iO5uQ8sV1bN4dG7lJ0rX3aF6hM"
       REDIS_HOST: redis
-      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
     depends_on:
       redis:
         condition: service_healthy

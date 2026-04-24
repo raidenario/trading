@@ -7,6 +7,7 @@ Usage:
     exchange-tooling flow       [--endpoint URL] [--rate N] [--count N] [--dry-run]
     exchange-tooling load       [--endpoint URL] [--rate N] [--count N] [--dry-run]
     exchange-tooling replay     PATH [--endpoint URL] [--speed N] [--dry-run]
+    exchange-tooling real-market-simulator [--symbols PETR4,BTC-USD] [--start YYYY-MM-DD] [--end YYYY-MM-DD]
 """
 from __future__ import annotations
 
@@ -14,6 +15,8 @@ import argparse
 import json
 import sys
 import time
+
+import httpx
 
 from .generators import OrderGenerator
 from .instruments import InstrumentCatalog, MarketSession
@@ -85,6 +88,29 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument("--endpoint", default="http://localhost:5103")
     replay.add_argument("--speed", type=float, default=1.0)
     replay.add_argument("--dry-run", action="store_true")
+
+    real_market = subparsers.add_parser(
+        "real-market-simulator",
+        help="Replay yfinance historical candles as Gateway-compatible synthetic order flow",
+    )
+    real_market.add_argument("--symbols", help="Comma-separated internal symbols, e.g. PETR4,BTC-USD")
+    real_market.add_argument("--start", default="2023-01-01", help="Historical start date")
+    real_market.add_argument("--end", default="2023-12-31", help="Historical end date")
+    real_market.add_argument("--interval", default="1d", help="yfinance interval, e.g. 1d, 1h, 5m")
+    real_market.add_argument("--endpoint", default="http://localhost:5103")
+    real_market.add_argument("--speed", type=float, default=1.0, help="Seconds between emitted orders")
+    real_market.add_argument("--session", choices=["regular", "after-market", "auction", "closed"], default="regular")
+    real_market.add_argument("--max-candles-per-symbol", type=int, default=None)
+    real_market.add_argument(
+        "--replay-clock",
+        choices=["historical", "compressed-now"],
+        default="historical",
+        help="Keep original candle timestamps or compress them into a current replay timeline",
+    )
+    real_market.add_argument("--replay-start", default=None, help="UTC ISO timestamp used as the first replay candle time")
+    real_market.add_argument("--replay-step-seconds", type=int, default=None, help="Seconds between replayed candles when using --replay-clock compressed-now")
+    real_market.add_argument("--skip-health-check", action="store_true")
+    real_market.add_argument("--dry-run", action="store_true")
 
     return parser
 
@@ -172,6 +198,75 @@ def main() -> None:
 
     if args.command == "replay":
         replay_file(args.path, args.endpoint, speed=args.speed, dry_run=args.dry_run)
+        return
+
+    if args.command == "real-market-simulator":
+        from rich.console import Console
+
+        from .real_market_simulator import HistoricalReplayConfig, run_real_market_simulation
+
+        console = Console()
+        if not args.dry_run and not args.skip_health_check:
+            try:
+                health = httpx.get(f"{args.endpoint.rstrip('/')}/health", timeout=3.0)
+                health.raise_for_status()
+            except httpx.HTTPError as exc:
+                console.print(
+                    f"[red]Gateway health check failed at {args.endpoint}/health[/red]\n"
+                    f"[dim]{exc}[/dim]\n"
+                    "Start the local stack first, or run with --dry-run to validate yfinance extraction only."
+                )
+                sys.exit(1)
+
+        def report(event: str, payload: dict[str, object]) -> None:
+            if event == "symbol_start":
+                console.print(f"[bold cyan]{payload['symbol']}[/bold cyan] <- {payload['source_symbol']}: downloading candles...")
+            elif event == "candles_loaded":
+                console.print(f"  candles loaded: {payload['count']}")
+            elif event == "candle_start":
+                console.print(
+                    f"  candle {payload['timestamp']} "
+                    f"O={float(payload['open']):,.4f} H={float(payload['high']):,.4f} "
+                    f"L={float(payload['low']):,.4f} C={float(payload['close']):,.4f} "
+                    f"orders={payload['order_count']}"
+                )
+            elif event == "order_sent":
+                mode = "DRY" if payload["dry_run"] else "OK"
+                console.print(
+                    f"    [{mode}] #{int(payload['orders_sent']):>5} "
+                    f"{str(payload['side']):>4} {float(payload['quantity']):,.8f} "
+                    f"{payload['symbol']} @ {float(payload['price']):,.4f}"
+                )
+            elif event == "order_failed":
+                console.print(
+                    f"    [red]FAIL[/red] #{int(payload['orders_failed']):>5} "
+                    f"{str(payload['side']):>4} {float(payload['quantity']):,.8f} "
+                    f"{payload['symbol']} @ {float(payload['price']):,.4f} "
+                    f"[red]- {payload.get('reason') or 'rejected'}[/red]"
+                )
+
+        summary = run_real_market_simulation(
+            replay_config=HistoricalReplayConfig(
+                symbols=parse_csv(args.symbols),
+                start=args.start,
+                end=args.end,
+                interval=args.interval,
+                endpoint=args.endpoint,
+                speed=args.speed,
+                session=session,
+                dry_run=args.dry_run,
+                max_candles_per_symbol=args.max_candles_per_symbol,
+                replay_clock=args.replay_clock,
+                replay_start=args.replay_start,
+                replay_step_seconds=args.replay_step_seconds,
+            ),
+            progress=report,
+        )
+        console.print("[bold green]Real Market Simulator finished[/bold green]")
+        console.print(f"  Symbols: {', '.join(summary.symbols)}")
+        console.print(f"  Candles replayed: {summary.candles_replayed}")
+        console.print(f"  Orders sent: {summary.orders_sent}")
+        console.print(f"  Orders failed: {summary.orders_failed}")
         return
 
 

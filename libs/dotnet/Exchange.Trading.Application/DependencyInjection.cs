@@ -14,7 +14,9 @@ public static class DependencyInjection
             DemoSeed.InstrumentTradingRules,
             DemoSeed.InstrumentMarketConfigs,
             DemoSeed.InstrumentStatuses));
-        services.AddSingleton<ITradingAccountResolver>(_ => new DemoTradingAccountResolver(DemoSeed.TradingAccounts));
+        services.AddSingleton<DemoTradingAccountResolver>(_ => new DemoTradingAccountResolver(DemoSeed.TradingAccounts));
+        services.AddSingleton<ITradingAccountResolver>(provider => provider.GetRequiredService<DemoTradingAccountResolver>());
+        services.AddSingleton<ITradingAccountProvisioner>(provider => provider.GetRequiredService<DemoTradingAccountResolver>());
         services.AddSingleton<IOrderCommandService, OrderCommandService>();
         services.AddSingleton<IAccountService, InMemoryAccountService>();
         return services;

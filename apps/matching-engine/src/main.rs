@@ -5,7 +5,7 @@ use rdkafka::message::Message;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 use serde::{Deserialize, Serialize};
-use matching_engine::{MatchingEngine, Order, OrderStatus};
+use matching_engine::{CandleBook, MatchingEngine, Order, OrderStatus};
 
 const DECIMAL_SCALE: f64 = 10_000.0;
 const ORDER_COMMANDS_TOPIC: &str = "order-commands";
@@ -121,11 +121,27 @@ struct TickerUpdatedEvent {
     schema_version: i32,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct CandleUpdatedEvent {
+    symbol: String,
+    interval: String,
+    open: f64,
+    high: f64,
+    low: f64,
+    close: f64,
+    volume: f64,
+    open_time: DateTime<Utc>,
+    close_time: DateTime<Utc>,
+    schema_version: i32,
+}
+
 async fn publish_event<T>(
     producer: &FutureProducer,
     topic: &str,
     key: &str,
     event_type: &str,
+    occurred_at: DateTime<Utc>,
     payload: T,
 ) where
     T: Serialize,
@@ -133,7 +149,7 @@ async fn publish_event<T>(
     let envelope = IntegrationEventEnvelope {
         event_type: event_type.to_string(),
         payload,
-        occurred_at: Utc::now(),
+        occurred_at,
         schema_version: 1,
     };
 
@@ -174,6 +190,7 @@ async fn main() {
         .expect("Can't subscribe to specified topics");
 
     let mut engine = MatchingEngine::new();
+    let mut candle_book = CandleBook::new("1m");
     log::info!("Matching Engine ready. Listening for orders...");
 
     loop {
@@ -198,6 +215,7 @@ async fn main() {
 
                 match serde_json::from_str::<Order>(payload) {
                     Ok(order) => {
+                        let submitted_at = order.submitted_at.unwrap_or_else(Utc::now);
                         log::info!(
                             ">>> NEW ORDER: {} {} {} @ {}",
                             order.side,
@@ -208,7 +226,7 @@ async fn main() {
 
                         let outcome = engine.submit(order);
                         let order_status = outcome.order.status.clone();
-                        let now = Utc::now();
+                        let event_time = outcome.order.submitted_at.unwrap_or(submitted_at);
 
                         if order_status == OrderStatus::Rejected {
                             publish_event(
@@ -216,12 +234,13 @@ async fn main() {
                                 MATCHING_EVENTS_TOPIC,
                                 &outcome.order.symbol,
                                 "OrderRejected",
+                                event_time,
                                 OrderRejectedEvent {
                                     order_id: outcome.order.id.clone(),
                                     account_id: outcome.order.account_id.clone(),
                                     symbol: outcome.order.symbol.clone(),
                                     reason: "Order rejected by matching rules or insufficient resting liquidity.".to_string(),
-                                    rejected_at: now,
+                                    rejected_at: event_time,
                                     schema_version: 1,
                                 },
                             ).await;
@@ -231,13 +250,14 @@ async fn main() {
                                 MATCHING_EVENTS_TOPIC,
                                 &outcome.order.symbol,
                                 "OrderAccepted",
+                                event_time,
                                 OrderAcceptedEvent {
                                     order_id: outcome.order.id.clone(),
                                     account_id: outcome.order.account_id.clone(),
                                     symbol: outcome.order.symbol.clone(),
                                     status: format!("{:?}", outcome.order.status),
                                     remaining_quantity: ticks_to_decimal(outcome.order.remaining_quantity),
-                                    accepted_at: now,
+                                    accepted_at: event_time,
                                     schema_version: 1,
                                 },
                             ).await;
@@ -245,12 +265,19 @@ async fn main() {
 
                         let mut last_trade_price = None;
                         let mut traded_volume = 0.0_f64;
+                        let mut latest_candle = None;
 
                         for trade in outcome.trades {
                             let trade_symbol = trade.symbol.clone();
                             let trade_key = trade.instrument_id.clone().unwrap_or_else(|| trade_symbol.clone());
                             last_trade_price = Some(ticks_to_decimal(trade.price));
                             traded_volume += ticks_to_decimal(trade.quantity);
+                            latest_candle = Some(candle_book.apply_trade(
+                                trade_symbol.clone(),
+                                event_time,
+                                ticks_to_decimal(trade.price),
+                                ticks_to_decimal(trade.quantity),
+                            ));
 
                             log::info!(
                                 "    MATCH FOUND: {} {} @ {}",
@@ -265,6 +292,7 @@ async fn main() {
                                 MATCHING_EVENTS_TOPIC,
                                 &trade_key,
                                 "TradeExecuted",
+                                event_time,
                                 TradeExecutedEvent {
                                     trade_id: trade.trade_id,
                                     buy_order_id: trade.buy_order_id,
@@ -277,7 +305,7 @@ async fn main() {
                                     symbol: trade_symbol,
                                     price: ticks_to_decimal(trade.price),
                                     quantity: ticks_to_decimal(trade.quantity),
-                                    executed_at: now,
+                                    executed_at: event_time,
                                     schema_version: 1,
                                 },
                             ).await;
@@ -288,6 +316,7 @@ async fn main() {
                             MARKETDATA_EVENTS_TOPIC,
                             &outcome.snapshot.book_key,
                             "BookUpdated",
+                            event_time,
                             BookUpdatedEvent {
                                 instrument_id: outcome.snapshot.instrument_id.clone(),
                                 book_key: outcome.snapshot.book_key.clone(),
@@ -302,7 +331,7 @@ async fn main() {
                                     quantity: ticks_to_decimal(level.quantity),
                                     order_count: level.order_count,
                                 }).collect(),
-                                as_of: now,
+                                as_of: event_time,
                                 schema_version: 1,
                             },
                         ).await;
@@ -316,6 +345,7 @@ async fn main() {
                                 MARKETDATA_EVENTS_TOPIC,
                                 &outcome.snapshot.book_key,
                                 "TickerUpdated",
+                                event_time,
                                 TickerUpdatedEvent {
                                     instrument_id: outcome.snapshot.instrument_id.clone(),
                                     book_key: outcome.snapshot.book_key.clone(),
@@ -325,7 +355,29 @@ async fn main() {
                                     best_ask,
                                     volume24_h: traded_volume,
                                     change24_h: 0.0,
-                                    as_of: now,
+                                    as_of: event_time,
+                                    schema_version: 1,
+                                },
+                            ).await;
+                        }
+
+                        if let Some(candle) = latest_candle {
+                            publish_event(
+                                &producer,
+                                MARKETDATA_EVENTS_TOPIC,
+                                &outcome.snapshot.book_key,
+                                "CandleUpdated",
+                                event_time,
+                                CandleUpdatedEvent {
+                                    symbol: candle.symbol,
+                                    interval: candle.interval,
+                                    open: candle.open,
+                                    high: candle.high,
+                                    low: candle.low,
+                                    close: candle.close,
+                                    volume: candle.volume,
+                                    open_time: candle.open_time,
+                                    close_time: candle.close_time,
                                     schema_version: 1,
                                 },
                             ).await;

@@ -136,3 +136,14 @@ ON CONFLICT (instrument_id) DO UPDATE SET
     trading_status = EXCLUDED.trading_status,
     updated_at = EXCLUDED.updated_at,
     notes = EXCLUDED.notes;
+
+UPDATE instruments
+SET price_precision = rules.price_precision,
+    quantity_precision = rules.quantity_precision,
+    tick_size = rules.tick_size,
+    lot_size = rules.lot_size,
+    trading_status = status.trading_status
+FROM instrument_trading_rules rules
+JOIN instrument_status status
+    ON status.instrument_id = rules.instrument_id
+WHERE instruments.instrument_id = rules.instrument_id;

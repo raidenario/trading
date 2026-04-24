@@ -13,6 +13,11 @@ public class Program
         });
         builder.Services.AddSingleton<QueryProjectionStore>();
         builder.Services.AddSingleton<PostgresProjectionWriter>();
+        builder.Services.AddHttpClient<IRealtimeEventForwarder, RealtimeEventForwarder>(client =>
+        {
+            client.BaseAddress = new Uri(builder.Configuration["RealtimeGateway:BaseUrl"] ?? "http://localhost:4000");
+            client.Timeout = TimeSpan.FromSeconds(2);
+        });
         builder.Services.AddHostedService<KafkaProjectionConsumer>();
         builder.Services.AddCors(options =>
         {
@@ -47,6 +52,9 @@ public class Program
 
         app.MapGet("/api/markets/{symbol}/ticker", (string symbol, QueryProjectionStore store) =>
             Results.Ok(store.GetTickerWithCandle(symbol)));
+
+        app.MapGet("/api/markets/{symbol}/candles", (string symbol, string? interval, int? limit, QueryProjectionStore store) =>
+            Results.Ok(store.GetCandles(symbol, interval, limit)));
 
         app.MapGet("/api/trades/recent", (string? symbol, int? limit, QueryProjectionStore store) =>
             Results.Ok(store.GetRecentTrades(symbol, limit)));

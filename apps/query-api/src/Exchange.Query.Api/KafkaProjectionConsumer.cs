@@ -11,7 +11,8 @@ public sealed class KafkaProjectionConsumer(
     IConfiguration configuration,
     ILogger<KafkaProjectionConsumer> logger,
     QueryProjectionStore store,
-    PostgresProjectionWriter postgresWriter) : BackgroundService
+    PostgresProjectionWriter postgresWriter,
+    IRealtimeEventForwarder realtimeForwarder) : BackgroundService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -100,6 +101,8 @@ public sealed class KafkaProjectionConsumer(
             return;
         }
 
+        realtimeForwarder.ForwardIfRealtimeTopic(topic, payload);
+
         switch (envelope.EventType)
         {
             case nameof(AccountCreated):
@@ -125,6 +128,10 @@ public sealed class KafkaProjectionConsumer(
             case nameof(TickerUpdated):
                 logger.LogInformation("Query consumed {Topic} event {EventType}.", topic, envelope.EventType);
                 DeserializeAndApply<TickerUpdated>(envelope, store.Apply);
+                break;
+            case nameof(CandleUpdated):
+                logger.LogInformation("Query consumed {Topic} event {EventType}.", topic, envelope.EventType);
+                DeserializeAndApply<CandleUpdated>(envelope, store.Apply);
                 break;
         }
     }

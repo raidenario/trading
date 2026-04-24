@@ -33,6 +33,46 @@ class CliTests(unittest.TestCase):
         self.assertEqual(50, args.count)
         self.assertTrue(args.dry_run)
 
+    def test_parser_supports_real_market_simulator_command(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(
+            [
+                "real-market-simulator",
+                "--symbols",
+                "PETR4,BTC-USD",
+                "--start",
+                "2023-01-01",
+                "--end",
+                "2023-01-31",
+                "--interval",
+                "1d",
+                "--endpoint",
+                "http://localhost:5103",
+                "--speed",
+                "0",
+                "--replay-clock",
+                "compressed-now",
+                "--replay-start",
+                "2026-04-24T13:00:00Z",
+                "--replay-step-seconds",
+                "60",
+                "--dry-run",
+            ]
+        )
+
+        self.assertEqual("real-market-simulator", args.command)
+        self.assertEqual("PETR4,BTC-USD", args.symbols)
+        self.assertEqual("2023-01-01", args.start)
+        self.assertEqual("2023-01-31", args.end)
+        self.assertEqual("1d", args.interval)
+        self.assertEqual("http://localhost:5103", args.endpoint)
+        self.assertEqual(0, args.speed)
+        self.assertEqual("compressed-now", args.replay_clock)
+        self.assertEqual("2026-04-24T13:00:00Z", args.replay_start)
+        self.assertEqual(60, args.replay_step_seconds)
+        self.assertTrue(args.dry_run)
+
     def test_expanded_market_scenario_contains_new_runtime_instruments(self) -> None:
         scenario = get_market_scenario("expanded-market")
 

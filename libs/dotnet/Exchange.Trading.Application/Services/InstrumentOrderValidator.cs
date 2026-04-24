@@ -9,9 +9,15 @@ public sealed class InstrumentOrderValidator(IInstrumentCatalog instrumentCatalo
 {
     private readonly IInstrumentCatalog _instrumentCatalog = instrumentCatalog;
 
+    /// <summary>
+    /// Validates a <see cref="CreateOrderCommand"/> against the resolved instrument's
+    /// trading rules, session windows, and status. Uses a declarative rule pipeline
+    /// so that new rules can be added or reordered without nested control-flow.
+    /// </summary>
     public InstrumentOrderValidationResult Validate(CreateOrderCommand command, InstrumentDefinition? resolvedInstrument)
     {
         _ = _instrumentCatalog;
+
         if (resolvedInstrument is null)
         {
             return Invalid("Instrument was not found.", MarketSession.Closed, null);
@@ -19,83 +25,20 @@ public sealed class InstrumentOrderValidator(IInstrumentCatalog instrumentCatalo
 
         var session = ResolveSession(command.SubmittedAt, resolvedInstrument.MarketConfig);
         var status = resolvedInstrument.Status.Status;
-        var tradingRule = resolvedInstrument.TradingRule;
+        var rule = resolvedInstrument.TradingRule;
+        var symbol = resolvedInstrument.Instrument.Symbol;
 
-        if (command.Quantity <= 0)
-        {
-            return Invalid("Quantity must be greater than zero.", session, resolvedInstrument);
-        }
+        // ── Declarative validation pipeline ──────────────────────────────
+        // Each rule returns an error message or null when valid.
+        // The pipeline short-circuits on the first failure.
+        var rules = BuildValidationRules(command, session, status, rule, symbol);
 
-        if (tradingRule.Profile == InstrumentRuleProfile.Disabled || !tradingRule.MatchingEnabled)
+        foreach (var validationRule in rules)
         {
-            return Invalid("Instrument book mode is disabled.", session, resolvedInstrument);
-        }
-
-        if (status is TradingStatus.Halted or TradingStatus.Suspended or TradingStatus.Disabled or TradingStatus.Expired)
-        {
-            return Invalid($"Instrument is {status}.", session, resolvedInstrument);
-        }
-
-        if (status == TradingStatus.Auction)
-        {
-            return Invalid("AUCTION placeholder mode is not yet supported for order entry.", session, resolvedInstrument);
-        }
-
-        if (session == MarketSession.Closed)
-        {
-            return Invalid("Instrument is currently outside of an allowed trading session.", session, resolvedInstrument);
-        }
-
-        if (status == TradingStatus.AfterMarketOnly && session != MarketSession.AfterMarket)
-        {
-            return Invalid("Instrument accepts orders only during AFTER_MARKET.", session, resolvedInstrument);
-        }
-
-        if (!tradingRule.AllowedSessions.Contains(session))
-        {
-            return Invalid($"Session {session} is not allowed for instrument '{resolvedInstrument.Instrument.Symbol}'.", session, resolvedInstrument);
-        }
-
-        if (!tradingRule.AllowedOrderTypes.Contains(command.Type))
-        {
-            return Invalid($"Order type {command.Type} is not allowed for instrument '{resolvedInstrument.Instrument.Symbol}'.", session, resolvedInstrument);
-        }
-
-        if (!IsMultipleOf(command.Quantity, tradingRule.LotSize, tradingRule.QuantityPrecision))
-        {
-            return Invalid("Quantity does not respect the configured lot size.", session, resolvedInstrument);
-        }
-
-        if (command.Quantity < tradingRule.MinQuantity)
-        {
-            return Invalid("Quantity is below the instrument minimum.", session, resolvedInstrument);
-        }
-
-        if (tradingRule.MaxQuantity.HasValue && command.Quantity > tradingRule.MaxQuantity.Value)
-        {
-            return Invalid("Quantity is above the instrument maximum.", session, resolvedInstrument);
-        }
-
-        if (!HasPrecision(command.Quantity, tradingRule.QuantityPrecision))
-        {
-            return Invalid("Quantity precision is invalid for the instrument.", session, resolvedInstrument);
-        }
-
-        if (command.Type == OrderType.Limit)
-        {
-            if (!command.Price.HasValue)
+            var error = validationRule();
+            if (error is not null)
             {
-                return Invalid("Limit orders require a price.", session, resolvedInstrument);
-            }
-
-            if (!IsMultipleOf(command.Price.Value, tradingRule.TickSize, tradingRule.PricePrecision))
-            {
-                return Invalid("Price does not respect the configured tick size.", session, resolvedInstrument);
-            }
-
-            if (!HasPrecision(command.Price.Value, tradingRule.PricePrecision))
-            {
-                return Invalid("Price precision is invalid for the instrument.", session, resolvedInstrument);
+                return Invalid(error, session, resolvedInstrument);
             }
         }
 
@@ -105,6 +48,98 @@ public sealed class InstrumentOrderValidator(IInstrumentCatalog instrumentCatalo
             session,
             resolvedInstrument,
             BuildExecutionInstructions(command, resolvedInstrument, session));
+    }
+
+    // ─── Rule definitions ────────────────────────────────────────────────
+    // Each Func<string?> encapsulates a single validation concern.
+    // Returning null means the rule passed; any string is a rejection reason.
+
+    private static IReadOnlyList<Func<string?>> BuildValidationRules(
+        CreateOrderCommand command,
+        MarketSession session,
+        TradingStatus status,
+        InstrumentTradingRule rule,
+        string symbol)
+    {
+        var rules = new List<Func<string?>>
+        {
+            // ── Quantity guard ───────────────────────────────────────
+            () => command.Quantity <= 0
+                ? "Quantity must be greater than zero."
+                : null,
+
+            // ── Book / matching gate ─────────────────────────────────
+            () => rule.Profile == InstrumentRuleProfile.Disabled || !rule.MatchingEnabled
+                ? "Instrument book mode is disabled."
+                : null,
+
+            // ── Instrument status gates ──────────────────────────────
+            () => status is TradingStatus.Halted or TradingStatus.Suspended
+                        or TradingStatus.Disabled or TradingStatus.Expired
+                ? $"Instrument is {status}."
+                : null,
+
+            () => status == TradingStatus.Auction
+                ? "AUCTION placeholder mode is not yet supported for order entry."
+                : null,
+
+            // ── Session gates ────────────────────────────────────────
+            () => session == MarketSession.Closed
+                ? "Instrument is currently outside of an allowed trading session."
+                : null,
+
+            () => status == TradingStatus.AfterMarketOnly && session != MarketSession.AfterMarket
+                ? "Instrument accepts orders only during AFTER_MARKET."
+                : null,
+
+            () => !rule.AllowedSessions.Contains(session)
+                ? $"Session {session} is not allowed for instrument '{symbol}'."
+                : null,
+
+            // ── Order-type gate ──────────────────────────────────────
+            () => !rule.AllowedOrderTypes.Contains(command.Type)
+                ? $"Order type {command.Type} is not allowed for instrument '{symbol}'."
+                : null,
+
+            // ── Quantity constraints ─────────────────────────────────
+            () => !IsMultipleOf(command.Quantity, rule.LotSize, rule.QuantityPrecision)
+                ? "Quantity does not respect the configured lot size."
+                : null,
+
+            () => command.Quantity < rule.MinQuantity
+                ? "Quantity is below the instrument minimum."
+                : null,
+
+            () => rule.MaxQuantity.HasValue && command.Quantity > rule.MaxQuantity.Value
+                ? "Quantity is above the instrument maximum."
+                : null,
+
+            () => !HasPrecision(command.Quantity, rule.QuantityPrecision)
+                ? "Quantity precision is invalid for the instrument."
+                : null,
+        };
+
+        // ── Limit-order price rules (only apply when Type == Limit) ──
+        if (command.Type == OrderType.Limit)
+        {
+            rules.AddRange([
+                () => !command.Price.HasValue
+                    ? "Limit orders require a price."
+                    : null,
+
+                () => command.Price.HasValue
+                      && !IsMultipleOf(command.Price.Value, rule.TickSize, rule.PricePrecision)
+                    ? "Price does not respect the configured tick size."
+                    : null,
+
+                () => command.Price.HasValue
+                      && !HasPrecision(command.Price.Value, rule.PricePrecision)
+                    ? "Price precision is invalid for the instrument."
+                    : null,
+            ]);
+        }
+
+        return rules;
     }
 
     private static IReadOnlyDictionary<string, string> BuildExecutionInstructions(CreateOrderCommand command, InstrumentDefinition resolvedInstrument, MarketSession session)

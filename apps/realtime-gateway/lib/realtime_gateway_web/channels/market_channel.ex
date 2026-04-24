@@ -8,7 +8,7 @@ defmodule RealtimeGatewayWeb.MarketChannel do
     response = %{
       subscribed: true,
       symbol: String.upcase(symbol),
-      channels: ["ticker_update", "trade_update"]
+      channels: ["ticker_update", "trade_update", "book_update", "candle_update"]
     }
 
     {:ok, response, assign(socket, :symbol, String.upcase(symbol))}

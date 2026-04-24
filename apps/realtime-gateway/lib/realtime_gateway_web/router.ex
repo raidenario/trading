@@ -9,5 +9,6 @@ defmodule RealtimeGatewayWeb.Router do
     pipe_through :api
 
     get "/health", HealthController, :show
+    post "/internal/events", EventController, :create
   end
 end

@@ -12,10 +12,14 @@ public sealed class InMemoryAccountService : IAccountService
     private readonly Dictionary<Guid, AccountSummary> _accounts = new();
     private readonly Dictionary<string, AccountBalanceView> _balances = new();
     private readonly IIntegrationEventPublisher _integrationEventPublisher;
+    private readonly ITradingAccountProvisioner _tradingAccountProvisioner;
 
-    public InMemoryAccountService(IIntegrationEventPublisher integrationEventPublisher)
+    public InMemoryAccountService(
+        IIntegrationEventPublisher integrationEventPublisher,
+        ITradingAccountProvisioner tradingAccountProvisioner)
     {
         _integrationEventPublisher = integrationEventPublisher;
+        _tradingAccountProvisioner = tradingAccountProvisioner;
         SeedDemoAccounts();
     }
 
@@ -29,6 +33,7 @@ public sealed class InMemoryAccountService : IAccountService
         var now = DateTimeOffset.UtcNow;
         var account = new AccountSummary(command.AccountId, command.DisplayName, command.Email, now);
         _accounts[command.AccountId] = account;
+        await _tradingAccountProvisioner.EnsureForAccountAsync(command.AccountId, ct);
 
         await _integrationEventPublisher.PublishAsync(
             KafkaTopics.AccountEvents,

@@ -122,6 +122,18 @@ def run_market_simulation(
         console.print(f"\n[yellow]{title} stopped.[/yellow]")
 
 
+def run_real_market_simulator(**kwargs):
+    """Run the yfinance-backed historical replay simulator.
+
+    Kept here as the market-simulator entry point while the implementation
+    lives in real_market_simulator.py to keep the existing fake market engine
+    small and dependency-light.
+    """
+    from .real_market_simulator import run_real_market_simulation
+
+    return run_real_market_simulation(**kwargs)
+
+
 @dataclass
 class SimulatedTicker:
     symbol: str

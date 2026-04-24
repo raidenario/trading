@@ -15,6 +15,7 @@ public sealed class QueryProjectionStore
     private readonly ConcurrentDictionary<string, InstrumentSnapshot> _instruments = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, PositionSnapshot> _positions = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, TickerSnapshot> _tickers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, CandleSnapshot> _candles = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<Guid, PendingOrderProjection> _pendingOrders = new();
     private readonly List<RecentTradeView> _trades = [];
     private readonly List<EnrichedTradeView> _enrichedTrades = [];
@@ -237,6 +238,23 @@ public sealed class QueryProjectionStore
             tickerUpdated.AsOf);
     }
 
+    public void Apply(CandleUpdated candleUpdated)
+    {
+        var symbol = candleUpdated.Symbol.ToUpperInvariant();
+        var candle = new CandleSnapshot(
+            symbol,
+            candleUpdated.Interval,
+            candleUpdated.Open,
+            candleUpdated.High,
+            candleUpdated.Low,
+            candleUpdated.Close,
+            candleUpdated.Volume,
+            candleUpdated.OpenTime,
+            candleUpdated.CloseTime);
+
+        _candles[CandleKey(symbol, candleUpdated.Interval, candleUpdated.OpenTime)] = candle;
+    }
+
     public IReadOnlyCollection<OrderHistoryItem> GetOrderHistory(Guid? accountId) =>
         _orders.Values
             .Where(order => !accountId.HasValue || order.AccountId == accountId.Value)
@@ -273,30 +291,48 @@ public sealed class QueryProjectionStore
             ticker = new TickerSnapshot(normalized, 0m, 0m, 0m, 0m, 0m, 0m, 0m, DateTimeOffset.UtcNow);
         }
 
-        CandleSnapshot candle;
-        lock (_tradeLock)
+        var candle = GetLatestCandle(normalized, "1m");
+        if (candle is null)
         {
-            var window = _trades
-                .Where(trade => trade.Symbol.Equals(normalized, StringComparison.OrdinalIgnoreCase))
-                .Where(trade => trade.ExecutedAt >= DateTimeOffset.UtcNow.AddMinutes(-1))
-                .OrderBy(trade => trade.ExecutedAt)
-                .ToArray();
+            lock (_tradeLock)
+            {
+                var window = _trades
+                    .Where(trade => trade.Symbol.Equals(normalized, StringComparison.OrdinalIgnoreCase))
+                    .Where(trade => trade.ExecutedAt >= DateTimeOffset.UtcNow.AddMinutes(-1))
+                    .OrderBy(trade => trade.ExecutedAt)
+                    .ToArray();
 
-            candle = window.Length == 0
-                ? new CandleSnapshot(normalized, "1m", ticker.LastPrice, ticker.LastPrice, ticker.LastPrice, ticker.LastPrice, 0m, DateTimeOffset.UtcNow.AddMinutes(-1), ticker.AsOf)
-                : new CandleSnapshot(
-                    normalized,
-                    "1m",
-                    window.First().Price,
-                    window.Max(trade => trade.Price),
-                    window.Min(trade => trade.Price),
-                    window.Last().Price,
-                    window.Sum(trade => trade.Quantity),
-                    DateTimeOffset.UtcNow.AddMinutes(-1),
-                    ticker.AsOf);
+                candle = window.Length == 0
+                    ? new CandleSnapshot(normalized, "1m", ticker.LastPrice, ticker.LastPrice, ticker.LastPrice, ticker.LastPrice, 0m, DateTimeOffset.UtcNow.AddMinutes(-1), ticker.AsOf)
+                    : new CandleSnapshot(
+                        normalized,
+                        "1m",
+                        window.First().Price,
+                        window.Max(trade => trade.Price),
+                        window.Min(trade => trade.Price),
+                        window.Last().Price,
+                        window.Sum(trade => trade.Quantity),
+                        DateTimeOffset.UtcNow.AddMinutes(-1),
+                        ticker.AsOf);
+            }
         }
 
         return new { ticker, candle };
+    }
+
+    public IReadOnlyCollection<CandleSnapshot> GetCandles(string symbol, string? interval, int? limit)
+    {
+        var normalized = symbol.ToUpperInvariant();
+        var normalizedInterval = string.IsNullOrWhiteSpace(interval) ? "1m" : interval.Trim();
+        var effectiveLimit = Math.Clamp(limit ?? 200, 1, 1000);
+
+        return _candles.Values
+            .Where(candle => candle.Symbol.Equals(normalized, StringComparison.OrdinalIgnoreCase))
+            .Where(candle => candle.Interval.Equals(normalizedInterval, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(candle => candle.OpenedAt)
+            .Take(effectiveLimit)
+            .OrderBy(candle => candle.OpenedAt)
+            .ToArray();
     }
 
     public IReadOnlyCollection<RecentTradeView> GetRecentTrades(string? symbol, int? limit)
@@ -481,4 +517,14 @@ public sealed class QueryProjectionStore
 
     private static string PositionKey(Guid tradingAccountId, Guid instrumentId, DateOnly positionDate) =>
         $"{tradingAccountId:N}:{instrumentId:N}:{positionDate:yyyyMMdd}";
+
+    private static string CandleKey(string symbol, string interval, DateTimeOffset openedAt) =>
+        $"{symbol}:{interval}:{openedAt.UtcTicks}";
+
+    private CandleSnapshot? GetLatestCandle(string symbol, string interval) =>
+        _candles.Values
+            .Where(candle => candle.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase))
+            .Where(candle => candle.Interval.Equals(interval, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(candle => candle.OpenedAt)
+            .FirstOrDefault();
 }

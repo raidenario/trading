@@ -103,7 +103,7 @@ public static class DemoSeed
             null,
             "SOL",
             "USD",
-            2,
+            4,
             8,
             0.0001m,
             0.00000001m,

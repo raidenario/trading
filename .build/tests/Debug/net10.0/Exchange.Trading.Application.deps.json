@@ -1,0 +1,56 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "Exchange.Trading.Application/1.0.0": {
+        "dependencies": {
+          "Exchange.Platform.Contracts": "1.0.0",
+          "Exchange.Trading.Domain": "1.0.0"
+        },
+        "runtime": {
+          "Exchange.Trading.Application.dll": {}
+        }
+      },
+      "Exchange.Platform.Contracts/1.0.0": {
+        "runtime": {
+          "Exchange.Platform.Contracts.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "Exchange.Trading.Domain/1.0.0": {
+        "dependencies": {
+          "Exchange.Platform.Contracts": "1.0.0"
+        },
+        "runtime": {
+          "Exchange.Trading.Domain.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Exchange.Trading.Application/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Exchange.Platform.Contracts/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Exchange.Trading.Domain/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

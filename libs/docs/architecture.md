@@ -28,7 +28,7 @@ The codebase now includes the reference and post-trade preparation objects requi
 ## What Is Implemented Now
 
 - Default crypto instruments for `BTC-USD`, `ETH-USD`, and `SOL-USD`.
-- Default participant plus one default trading account per seeded account.
+- Default participant plus one default trading account per seeded account, with runtime provisioning for newly created accounts.
 - Gateway/API application-layer enrichment from `symbol` and `account_id`.
 - Matching engine compatibility for old and new order payload shapes.
 - Trade events carrying instrument and trading-account identifiers.

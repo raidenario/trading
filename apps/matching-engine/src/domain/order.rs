@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, de};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::fmt;
@@ -85,6 +86,9 @@ pub struct Order {
     #[serde(default)]
     pub sequence: u64,
 
+    #[serde(rename = "SubmittedAt", alias = "submittedAt", default)]
+    pub submitted_at: Option<DateTime<Utc>>,
+
     #[serde(default = "default_status")]
     pub status: OrderStatus,
 }
@@ -132,6 +136,7 @@ impl Order {
             quantity,
             remaining_quantity: quantity,
             sequence: 0,
+            submitted_at: None,
             status: OrderStatus::Pending,
         }
     }
@@ -158,6 +163,7 @@ impl Order {
             quantity,
             remaining_quantity: quantity,
             sequence: 0,
+            submitted_at: None,
             status: OrderStatus::Pending,
         }
     }
@@ -238,6 +244,7 @@ mod tests {
         assert_eq!(order.remaining_quantity, 13_383);
         assert_eq!(order.price, Some(1_254_500));
         assert_eq!(order.sequence, 42);
+        assert_eq!(order.submitted_at.map(|value| value.to_rfc3339()), Some("2026-03-23T15:11:38.612508+00:00".to_string()));
         assert_eq!(order.status, OrderStatus::Pending);
     }
 
