@@ -1,15 +1,16 @@
 import { useState } from 'react'
 import { createOrder } from '../api/gatewayApi'
-import type { CreateOrderPayload } from '../types'
+import type { BookSnapshot, CreateOrderPayload } from '../types'
 
 interface Props {
   symbol: string
   accountId: string
+  onBookUpdate?: (book: BookSnapshot) => void
 }
 
 type SubmitState = 'idle' | 'sending' | 'success' | 'error'
 
-export function OrderTicket({ symbol, accountId }: Props) {
+export function OrderTicket({ symbol, accountId, onBookUpdate }: Props) {
   const [side, setSide] = useState<'Buy' | 'Sell'>('Buy')
   const [price, setPrice] = useState('')
   const [quantity, setQuantity] = useState('')
@@ -41,6 +42,9 @@ export function OrderTicket({ symbol, accountId }: Props) {
 
     try {
       const result = await createOrder(payload)
+      if (result.book) {
+        onBookUpdate?.(result.book)
+      }
       setSubmitState('success')
       setMessage(`Order ${result.status} — ${result.orderId.substring(0, 8)}…`)
       setPrice('')
@@ -53,8 +57,7 @@ export function OrderTicket({ symbol, accountId }: Props) {
   }
 
   return (
-    <div style={{ padding: 'var(--sp-3)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }} id="order-ticket">
-      {/* Side toggle */}
+    <div className="order-ticket" id="order-ticket">
       <div className="side-toggle">
         <button
           className={`side-toggle__btn side-toggle__btn--buy${side === 'Buy' ? ' active' : ''}`}
@@ -72,43 +75,49 @@ export function OrderTicket({ symbol, accountId }: Props) {
         </button>
       </div>
 
-      {/* Symbol */}
       <div className="form-group">
         <label className="form-label">Symbol</label>
-        <input className="form-input" value={symbol} readOnly id="order-symbol" />
+        <div className="symbol-select-shell">
+          <span className="asset-avatar asset-avatar--sm">{symbol.slice(0, 2).toUpperCase()}</span>
+          <input className="form-input form-input--ghost" value={symbol} readOnly id="order-symbol" />
+          <span className="select-chevron">⌄</span>
+        </div>
       </div>
 
-      {/* Price */}
       <div className="form-group">
         <label className="form-label">Price</label>
-        <input
-          className="form-input"
-          type="number"
-          step="any"
-          placeholder="0.00"
-          value={price}
-          onChange={(e) => setPrice(e.target.value)}
-          id="order-price"
-        />
+        <div className="input-with-unit">
+          <input
+            className="form-input"
+            type="number"
+            step="any"
+            placeholder="0,00"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            id="order-price"
+          />
+          <span>USD</span>
+        </div>
         {errors.price && <span className="form-error">{errors.price}</span>}
       </div>
 
-      {/* Quantity */}
       <div className="form-group">
         <label className="form-label">Quantity</label>
-        <input
-          className="form-input"
-          type="number"
-          step="any"
-          placeholder="0"
-          value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
-          id="order-quantity"
-        />
+        <div className="input-with-unit">
+          <input
+            className="form-input"
+            type="number"
+            step="any"
+            placeholder="0"
+            value={quantity}
+            onChange={(e) => setQuantity(e.target.value)}
+            id="order-quantity"
+          />
+          <span>{symbol.split('-')[0] || symbol}</span>
+        </div>
         {errors.quantity && <span className="form-error">{errors.quantity}</span>}
       </div>
 
-      {/* Submit */}
       <button
         className={`btn btn--full ${side === 'Buy' ? 'btn--buy' : 'btn--sell'}`}
         onClick={handleSubmit}
@@ -118,7 +127,6 @@ export function OrderTicket({ symbol, accountId }: Props) {
         {submitState === 'sending' ? 'Sending…' : `${side} ${symbol.split('-')[0] || symbol}`}
       </button>
 
-      {/* Feedback */}
       {message && (
         <div
           className={submitState === 'error' ? 'error-banner' : 'text-buy'}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { buildChartCandles, getCandleTimestampKey } from '../market/candles'
-import type { CandleSnapshot, RealtimeCandleUpdate } from '../types'
+import type { UTCTimestamp } from 'lightweight-charts'
+import { buildChartCandles, buildLiveChartCandleFromTrade, getCandleTimestampKey } from '../market/candles'
+import type { CandleSnapshot, RecentTrade, RealtimeCandleUpdate } from '../types'
 
 describe('buildChartCandles', () => {
   it('accepts query-api candles that use openedAt/closedAt', () => {
@@ -157,5 +158,32 @@ describe('buildChartCandles', () => {
     }
 
     expect(getCandleTimestampKey(candle)).toBe(1_777_036_200)
+  })
+
+  it('builds an in-progress candle from a trade print', () => {
+    const trade: RecentTrade = {
+      tradeId: 'trade-1',
+      symbol: 'PETR4',
+      price: 24.8,
+      quantity: 100,
+      side: 'Buy',
+      executedAt: '2026-04-24T13:00:37Z',
+    }
+
+    const result = buildLiveChartCandleFromTrade(trade, 'PETR4', {
+      time: 1_777_035_600 as UTCTimestamp,
+      open: 24.5,
+      high: 24.7,
+      low: 24.4,
+      close: 24.6,
+    })
+
+    expect(result).toEqual({
+      time: 1_777_035_600,
+      open: 24.5,
+      high: 24.8,
+      low: 24.4,
+      close: 24.8,
+    })
   })
 })

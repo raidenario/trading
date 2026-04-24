@@ -32,11 +32,15 @@ export function Sidebar({ instruments, overview, selectedSymbol, onSelect }: Pro
 
   return (
     <aside className="app-sidebar" aria-label="Instrument watchlist">
-      <div className="sidebar-header">Watchlist</div>
+      <div className="sidebar-header">
+        <span>Watchlist</span>
+        <button className="icon-button sidebar-add" type="button" aria-label="Add symbol">+</button>
+      </div>
       <div className="sidebar-search">
+        <span className="sidebar-search__icon" aria-hidden="true">⌕</span>
         <input
           type="text"
-          placeholder="Search symbol…"
+          placeholder="Search symbol..."
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           aria-label="Filter instruments"
@@ -58,10 +62,13 @@ export function Sidebar({ instruments, overview, selectedSymbol, onSelect }: Pro
               onKeyDown={(e) => e.key === 'Enter' && onSelect(inst.symbol)}
               id={`sidebar-item-${inst.symbol}`}
             >
-              <div>
-                <div className="sidebar-item__symbol">{inst.symbol}</div>
-                <div className="sidebar-item__meta">
-                  {inst.baseAsset}/{inst.quoteAsset}
+              <div className="sidebar-item__asset">
+                <span className="asset-avatar" data-symbol={inst.symbol}>{symbolMark(inst.symbol)}</span>
+                <div>
+                  <div className="sidebar-item__symbol">{inst.symbol}</div>
+                  <div className="sidebar-item__meta">
+                    {inst.baseAsset}/{inst.quoteAsset}
+                  </div>
                 </div>
               </div>
               <div>
@@ -88,6 +95,11 @@ export function Sidebar({ instruments, overview, selectedSymbol, onSelect }: Pro
       </div>
     </aside>
   )
+}
+
+function symbolMark(symbol: string): string {
+  const clean = symbol.replace(/[^A-Z0-9]/gi, '')
+  return clean.slice(0, 2).toUpperCase()
 }
 
 function fmtPrice(n: number): string {

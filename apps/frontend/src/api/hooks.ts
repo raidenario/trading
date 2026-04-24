@@ -34,6 +34,15 @@ export function useCandles(symbol: string, interval = '1m', limit = 300) {
   })
 }
 
+export function useOrderBook(symbol: string) {
+  return useQuery({
+    queryKey: ['order-book', symbol],
+    queryFn: () => queryApi.getOrderBook(symbol),
+    enabled: !!symbol,
+    refetchInterval: 2_000,
+  })
+}
+
 export function useMarketOverview() {
   return useQuery({
     queryKey: ['market-overview'],

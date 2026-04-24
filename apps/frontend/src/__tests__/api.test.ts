@@ -110,6 +110,15 @@ describe('Query API URL construction', () => {
     expect(mockFetch.mock.calls[0][0]).toBe('/query-api/api/markets/PETR4/candles?interval=1m&limit=300')
   })
 
+  it('builds order book URL with symbol encoding', async () => {
+    mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(null) })
+
+    const { getOrderBook } = await import('../api/queryApi')
+    await getOrderBook('BTC-USD')
+
+    expect(mockFetch.mock.calls[0][0]).toBe('/query-api/api/markets/BTC-USD/book')
+  })
+
   it('builds positions URL with optional accountId', async () => {
     mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve([]) })
 

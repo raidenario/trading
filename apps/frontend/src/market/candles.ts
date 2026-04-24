@@ -1,5 +1,5 @@
 import type { CandlestickData, Time, UTCTimestamp } from 'lightweight-charts'
-import type { CandleSnapshot, RealtimeCandleUpdate } from '../types'
+import type { CandleSnapshot, RecentTrade, RealtimeCandleUpdate } from '../types'
 
 type CandleTimestampAliases = {
   open_time?: string
@@ -47,6 +47,30 @@ export function buildRealtimeChartCandles(
   symbol: string,
 ): CandlestickData<Time>[] {
   return buildChartCandles([], candles, symbol)
+}
+
+export function buildLiveChartCandleFromTrade(
+  trade: RecentTrade,
+  symbol: string,
+  baseCandle?: CandlestickData<Time>,
+): CandlestickData<Time> | null {
+  if ((trade.symbol ?? '').toUpperCase() !== symbol.toUpperCase()) return null
+  if (!Number.isFinite(trade.price)) return null
+
+  const timestamp = parseIsoTimestamp(trade.executedAt)
+  if (timestamp === null) return null
+
+  const bucketTime = Math.floor((timestamp as number) / 60) * 60 as UTCTimestamp
+  const price = trade.price
+  const base = baseCandle?.time === bucketTime ? baseCandle : undefined
+
+  return {
+    time: bucketTime,
+    open: base?.open ?? price,
+    high: Math.max(base?.high ?? price, price),
+    low: Math.min(base?.low ?? price, price),
+    close: price,
+  }
 }
 
 export function getCandleTimestampKey(candle: CandleLike): number | null {

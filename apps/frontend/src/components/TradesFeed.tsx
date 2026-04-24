@@ -30,7 +30,11 @@ export function TradesFeed({ trades, isLoading }: Props) {
         </thead>
         <tbody>
           {trades.map((trade, idx) => (
-            <tr key={trade.tradeId || idx}>
+            <tr
+              key={trade.tradeId || idx}
+              className={`trade-row trade-row--${determineSide(trade.side)}`}
+              style={{ animationDelay: `${Math.min(idx * 28, 220)}ms` }}
+            >
               <td className={determineSide(trade.side) === 'buy' ? 'text-buy' : 'text-sell'}>
                 {fmtPrice(trade.price)}
               </td>
@@ -45,6 +49,7 @@ export function TradesFeed({ trades, isLoading }: Props) {
           ))}
         </tbody>
       </table>
+      <button className="trades-link" type="button">View All Trades</button>
     </div>
   )
 }

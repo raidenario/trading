@@ -16,6 +16,7 @@ public sealed class QueryProjectionStore
     private readonly ConcurrentDictionary<string, PositionSnapshot> _positions = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, TickerSnapshot> _tickers = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, CandleSnapshot> _candles = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, BookSnapshot> _books = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<Guid, PendingOrderProjection> _pendingOrders = new();
     private readonly List<RecentTradeView> _trades = [];
     private readonly List<EnrichedTradeView> _enrichedTrades = [];
@@ -255,6 +256,16 @@ public sealed class QueryProjectionStore
         _candles[CandleKey(symbol, candleUpdated.Interval, candleUpdated.OpenTime)] = candle;
     }
 
+    public void Apply(BookUpdated bookUpdated)
+    {
+        var symbol = bookUpdated.Symbol.ToUpperInvariant();
+        _books[symbol] = new BookSnapshot(
+            symbol,
+            bookUpdated.Bids.Select(level => new BookLevelView(level.Price, level.Quantity, level.OrderCount)).ToArray(),
+            bookUpdated.Asks.Select(level => new BookLevelView(level.Price, level.Quantity, level.OrderCount)).ToArray(),
+            bookUpdated.AsOf);
+    }
+
     public IReadOnlyCollection<OrderHistoryItem> GetOrderHistory(Guid? accountId) =>
         _orders.Values
             .Where(order => !accountId.HasValue || order.AccountId == accountId.Value)
@@ -333,6 +344,12 @@ public sealed class QueryProjectionStore
             .Take(effectiveLimit)
             .OrderBy(candle => candle.OpenedAt)
             .ToArray();
+    }
+
+    public BookSnapshot? GetOrderBook(string symbol)
+    {
+        var normalized = symbol.ToUpperInvariant();
+        return _books.TryGetValue(normalized, out var book) ? book : null;
     }
 
     public IReadOnlyCollection<RecentTradeView> GetRecentTrades(string? symbol, int? limit)
@@ -528,3 +545,11 @@ public sealed class QueryProjectionStore
             .OrderByDescending(candle => candle.OpenedAt)
             .FirstOrDefault();
 }
+
+public sealed record BookSnapshot(
+    string Symbol,
+    IReadOnlyCollection<BookLevelView> Bids,
+    IReadOnlyCollection<BookLevelView> Asks,
+    DateTimeOffset AsOf);
+
+public sealed record BookLevelView(decimal Price, decimal Quantity, int OrderCount);

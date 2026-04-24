@@ -16,13 +16,20 @@ export function TickerPanel({ data, symbol, isLoading }: Props) {
   return (
     <div className="ticker-detail" id="ticker-panel">
       <div className="ticker-detail__main">
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+        <div className="ticker-detail__identity">
+          <span className="asset-avatar asset-avatar--lg">{symbol.slice(0, 2).toUpperCase()}</span>
+          <div>
+            <strong>{symbol}</strong>
+            <span>{symbol.includes('-') ? symbol.replace('-', ' / ') : symbol}</span>
+          </div>
+        </div>
+        <div className="ticker-detail__quote">
           <span className="ticker-detail__price">{fmtPrice(ticker.lastPrice)}</span>
           <span className={`ticker-detail__change ${isPositive ? 'text-buy' : 'text-sell'}`}>
             {isPositive ? '▲' : '▼'} {Math.abs(ticker.change24H).toFixed(2)} ({isPositive ? '+' : ''}{pctChange(ticker).toFixed(2)}%)
           </span>
         </div>
-        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+        <div className="ticker-detail__time">
           {symbol} · as of {new Date(ticker.asOf).toLocaleTimeString()}
         </div>
       </div>

@@ -133,6 +133,10 @@ public sealed class KafkaProjectionConsumer(
                 logger.LogInformation("Query consumed {Topic} event {EventType}.", topic, envelope.EventType);
                 DeserializeAndApply<CandleUpdated>(envelope, store.Apply);
                 break;
+            case nameof(BookUpdated):
+                logger.LogInformation("Query consumed {Topic} event {EventType}.", topic, envelope.EventType);
+                DeserializeAndApply<BookUpdated>(envelope, store.Apply);
+                break;
         }
     }
 

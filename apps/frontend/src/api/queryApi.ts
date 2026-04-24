@@ -16,6 +16,7 @@ import type {
   PositionSnapshot,
   OrderHistoryItem,
   EnrichedOrderView,
+  BookSnapshot,
 } from '../types'
 
 const BASE = config.queryApiBase
@@ -30,6 +31,9 @@ export const getCandles = (symbol: string, interval = '1m', limit = 300) =>
   fetchJson<CandleSnapshot[]>(
     `${BASE}/api/markets/${encodeURIComponent(symbol)}/candles?interval=${encodeURIComponent(interval)}&limit=${limit}`
   )
+
+export const getOrderBook = (symbol: string) =>
+  fetchJson<BookSnapshot | null>(`${BASE}/api/markets/${encodeURIComponent(symbol)}/book`)
 
 export const getMarketOverview = () =>
   fetchJson<MarketOverviewItem[]>(`${BASE}/api/markets/overview`)

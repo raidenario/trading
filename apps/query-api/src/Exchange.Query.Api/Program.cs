@@ -56,6 +56,9 @@ public class Program
         app.MapGet("/api/markets/{symbol}/candles", (string symbol, string? interval, int? limit, QueryProjectionStore store) =>
             Results.Ok(store.GetCandles(symbol, interval, limit)));
 
+        app.MapGet("/api/markets/{symbol}/book", (string symbol, QueryProjectionStore store) =>
+            Results.Ok(store.GetOrderBook(symbol)));
+
         app.MapGet("/api/trades/recent", (string? symbol, int? limit, QueryProjectionStore store) =>
             Results.Ok(store.GetRecentTrades(symbol, limit)));
 
