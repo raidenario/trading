@@ -5,6 +5,7 @@
 // The proxy rewrites the /query-api prefix away.
 
 import { fetchJson } from './client'
+import { config } from '../config'
 import type {
   InstrumentSnapshot,
   CandleSnapshot,
@@ -17,7 +18,7 @@ import type {
   EnrichedOrderView,
 } from '../types'
 
-const BASE = '/query-api'
+const BASE = config.queryApiBase
 
 export const getInstruments = () =>
   fetchJson<InstrumentSnapshot[]>(`${BASE}/api/instruments`)

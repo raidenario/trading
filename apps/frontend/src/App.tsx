@@ -31,6 +31,7 @@ import { OrderTicket } from './components/OrderTicket'
 import { PortfolioPanel } from './components/PortfolioPanel'
 import { OrderHistory } from './components/OrderHistory'
 import { EventTape } from './components/EventTape'
+import { getCandleTimestampKey } from './market/candles'
 
 import type {
   BookSnapshot,
@@ -117,7 +118,7 @@ function AppInner() {
   }, [pushEvent])
 
   const onCandle = useCallback((data: RealtimeCandleUpdate) => {
-    setRealtimeCandles((prev) => [...prev, data].slice(-200))
+    setRealtimeCandles((prev) => mergeRealtimeCandles(prev, data))
     pushEvent(data.symbol, 'candle_update', data as unknown as Record<string, unknown>)
   }, [pushEvent])
 
@@ -356,4 +357,27 @@ function TradingView({
       </div>
     </>
   )
+}
+
+function mergeRealtimeCandles(
+  previous: RealtimeCandleUpdate[],
+  next: RealtimeCandleUpdate,
+): RealtimeCandleUpdate[] {
+  const nextKey = getCandleTimestampKey(next)
+  if (nextKey === null) {
+    return [...previous, next].slice(-200)
+  }
+
+  const nextSymbol = next.symbol.toUpperCase()
+  const existingIndex = previous.findIndex((candidate) => {
+    return candidate.symbol.toUpperCase() === nextSymbol && getCandleTimestampKey(candidate) === nextKey
+  })
+
+  if (existingIndex === -1) {
+    return [...previous, next].slice(-200)
+  }
+
+  const updated = previous.slice()
+  updated[existingIndex] = next
+  return updated
 }

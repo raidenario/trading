@@ -8,6 +8,7 @@ services:
 
   postgres:
     image: postgres:16
+    restart: unless-stopped
     ports:
       - "5432:5432"
     environment:
@@ -25,6 +26,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     healthcheck:
@@ -35,6 +37,7 @@ services:
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
+    restart: unless-stopped
     volumes:
       - zookeeper-data:/var/lib/zookeeper/data
       - zookeeper-log:/var/lib/zookeeper/log
@@ -49,6 +52,7 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
+    restart: unless-stopped
     volumes:
       - kafka-data:/var/lib/kafka/data
     ports:
@@ -69,6 +73,7 @@ services:
       KAFKA_LOG_DIRS: /var/lib/kafka/data
     healthcheck:
       test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
+      start_period: 30s
       interval: 10s
       timeout: 10s
       retries: 10
@@ -79,15 +84,17 @@ services:
       kafka:
         condition: service_healthy
     entrypoint: ["/bin/bash", "-c"]
-    command: |
-      echo 'Creating Kafka topics...'
-      kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic order-commands     --partitions 3 --replication-factor 1
-      kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic matching-events    --partitions 3 --replication-factor 1
-      kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic ledger-events      --partitions 3 --replication-factor 1
-      kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic marketdata-events  --partitions 3 --replication-factor 1
-      kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic account-events     --partitions 2 --replication-factor 1
-      echo 'Topics created successfully.'
-      kafka-topics --list --bootstrap-server kafka:9092
+    command:
+      - >-
+        set -euo pipefail;
+        echo 'Creating Kafka topics...';
+        kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic order-commands --partitions 3 --replication-factor 1;
+        kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic matching-events --partitions 3 --replication-factor 1;
+        kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic ledger-events --partitions 3 --replication-factor 1;
+        kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic marketdata-events --partitions 3 --replication-factor 1;
+        kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic account-events --partitions 2 --replication-factor 1;
+        echo 'Topics created successfully.';
+        kafka-topics --list --bootstrap-server kafka:9092
 
   # =====================================================
   # Application Services
@@ -97,8 +104,9 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/gateway-api.Dockerfile
+    restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "5103:8080"
     environment:
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=exchange;Username=exchange;Password=exchange"
@@ -118,8 +126,9 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/query-api.Dockerfile
+    restart: unless-stopped
     ports:
-      - "8081:8080"
+      - "5267:8080"
     environment:
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=exchange;Username=exchange;Password=exchange"
@@ -141,8 +150,9 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/ledger-service.Dockerfile
+    restart: unless-stopped
     ports:
-      - "8082:8080"
+      - "5075:8080"
     environment:
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=exchange;Username=exchange;Password=exchange"
@@ -158,6 +168,7 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/matching-engine.Dockerfile
+    restart: unless-stopped
     ports:
       - "7000:7000"
     environment:
@@ -170,6 +181,7 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/realtime-gateway.Dockerfile
+    restart: unless-stopped
     ports:
       - "4000:4000"
     environment:
@@ -188,12 +200,36 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/frontend.Dockerfile
+    restart: unless-stopped
     ports:
       - "3000:80"
     depends_on:
       - gateway-api
       - query-api
       - ledger-service
+      - realtime-gateway
+
+  tooling:
+    build:
+      context: ../..
+      dockerfile: infra/docker/tooling.Dockerfile
+    profiles: ["tools"]
+    working_dir: /workspace
+    entrypoint: ["exchange-tooling"]
+    command: ["--help"]
+    environment:
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      gateway-api:
+        condition: service_started
+      query-api:
+        condition: service_started
+      ledger-service:
+        condition: service_started
+      matching-engine:
+        condition: service_started
+      realtime-gateway:
+        condition: service_started
 
 volumes:
   pgdata:

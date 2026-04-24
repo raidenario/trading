@@ -30,7 +30,7 @@ export function useCandles(symbol: string, interval = '1m', limit = 300) {
     queryKey: ['candles', symbol, interval, limit],
     queryFn: () => queryApi.getCandles(symbol, interval, limit),
     enabled: !!symbol,
-    refetchInterval: 5_000,
+    staleTime: 30_000,
   })
 }
 

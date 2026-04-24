@@ -20,6 +20,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/ledger-api/, ''),
       },
+      '/socket': {
+        target: 'ws://localhost:4000',
+        ws: true,
+        changeOrigin: true,
+      },
     },
   },
 })

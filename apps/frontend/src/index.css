@@ -49,8 +49,8 @@
   --warning-bg:     rgba(247, 147, 26, 0.08);
 
   /* Typography */
-  --font-sans:      'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono:      'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-sans:      'IBM Plex Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono:      'IBM Plex Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 
   /* Spacing rhythm — 4px base */
   --sp-1:           4px;
@@ -85,6 +85,7 @@ body {
   color: var(--text-primary);
   line-height: 1.5;
   min-height: 100vh;
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

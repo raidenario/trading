@@ -5,6 +5,7 @@ WORKDIR /src
 RUN apt-get update && apt-get install -y cmake build-essential libssl-dev pkg-config
 
 COPY apps/matching-engine/Cargo.toml apps/matching-engine/Cargo.toml
+COPY apps/matching-engine/Cargo.lock apps/matching-engine/Cargo.lock
 COPY apps/matching-engine/src/ apps/matching-engine/src/
 
 WORKDIR /src/apps/matching-engine

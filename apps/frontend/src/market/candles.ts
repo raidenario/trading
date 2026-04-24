@@ -35,6 +35,25 @@ export function buildChartCandles(
   return [...deduped.values()].sort((a, b) => (a.time as number) - (b.time as number))
 }
 
+export function buildHistoricalChartCandles(
+  candles: CandleSnapshot[],
+  symbol: string,
+): CandlestickData<Time>[] {
+  return buildChartCandles(candles, [], symbol)
+}
+
+export function buildRealtimeChartCandles(
+  candles: RealtimeCandleUpdate[],
+  symbol: string,
+): CandlestickData<Time>[] {
+  return buildChartCandles([], candles, symbol)
+}
+
+export function getCandleTimestampKey(candle: CandleLike): number | null {
+  const timestamp = resolveCandleTimestamp(candle)
+  return timestamp === null ? null : (timestamp as number)
+}
+
 function normalizeChartCandle(candle: CandleLike): CandlestickData<Time> | null {
   const timestamp = resolveCandleTimestamp(candle)
   if (timestamp === null) return null

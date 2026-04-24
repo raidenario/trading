@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { createChart, type IChartApi, type ISeriesApi, CandlestickSeries } from 'lightweight-charts'
 import type { CandleSnapshot, RealtimeCandleUpdate } from '../types'
-import { buildChartCandles } from '../market/candles'
+import { buildHistoricalChartCandles, buildRealtimeChartCandles } from '../market/candles'
 
 interface Props {
   initialCandles: CandleSnapshot[]
@@ -17,6 +17,13 @@ export function CandleChart({ initialCandles, realtimeCandles, symbol }: Props) 
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const historySignatureRef = useRef<string>('')
+  const processedRealtimeRef = useRef(0)
+
+  const historicalData = useMemo(
+    () => buildHistoricalChartCandles(initialCandles, symbol),
+    [initialCandles, symbol],
+  )
 
   // Create chart on mount
   useEffect(() => {
@@ -26,7 +33,7 @@ export function CandleChart({ initialCandles, realtimeCandles, symbol }: Props) 
       layout: {
         background: { color: '#141821' },
         textColor: '#848e9c',
-        fontFamily: "'JetBrains Mono', monospace",
+        fontFamily: "'IBM Plex Sans', sans-serif",
         fontSize: 10,
       },
       grid: {
@@ -75,17 +82,43 @@ export function CandleChart({ initialCandles, realtimeCandles, symbol }: Props) 
     }
   }, [])
 
-  // Update data when symbol or candles change
+  // Reset the full dataset only when the historical window changes.
   useEffect(() => {
     if (!seriesRef.current) return
 
-    const candles = buildChartCandles(initialCandles, realtimeCandles, symbol)
-    seriesRef.current.setData(candles)
+    const lastHistoricalCandle = historicalData[historicalData.length - 1]
+    const signature = `${symbol}:${historicalData.length}:${historicalData[0]?.time ?? 'none'}:${lastHistoricalCandle?.time ?? 'none'}:${lastHistoricalCandle?.close ?? 'none'}`
+    if (historySignatureRef.current === signature) return
 
-    if (chartRef.current && candles.length > 0) {
+    seriesRef.current.setData(historicalData)
+    processedRealtimeRef.current = 0
+    historySignatureRef.current = signature
+
+    if (chartRef.current && historicalData.length > 0) {
       chartRef.current.timeScale().fitContent()
     }
-  }, [initialCandles, realtimeCandles, symbol])
+  }, [historicalData, symbol])
+
+  // Apply realtime candles incrementally to avoid resetting the chart every tick.
+  useEffect(() => {
+    if (!seriesRef.current) return
+    if (processedRealtimeRef.current > realtimeCandles.length) {
+      processedRealtimeRef.current = 0
+    }
+
+    const pending = realtimeCandles.slice(processedRealtimeRef.current)
+    if (pending.length === 0) return
+
+    const normalized = buildRealtimeChartCandles(pending, symbol)
+    const frame = requestAnimationFrame(() => {
+      for (const candle of normalized) {
+        seriesRef.current?.update(candle)
+      }
+      processedRealtimeRef.current = realtimeCandles.length
+    })
+
+    return () => cancelAnimationFrame(frame)
+  }, [realtimeCandles, symbol])
 
   return (
     <div

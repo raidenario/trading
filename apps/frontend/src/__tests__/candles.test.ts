@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildChartCandles } from '../market/candles'
+import { buildChartCandles, getCandleTimestampKey } from '../market/candles'
 import type { CandleSnapshot, RealtimeCandleUpdate } from '../types'
 
 describe('buildChartCandles', () => {
@@ -141,5 +141,21 @@ describe('buildChartCandles', () => {
 
     expect(result).toHaveLength(2)
     expect(result.map((c) => c.time)).toEqual([1_777_035_600, 1_777_035_660])
+  })
+
+  it('extracts a stable candle timestamp key for realtime dedupe', () => {
+    const candle: RealtimeCandleUpdate = {
+      symbol: 'PETR4',
+      interval: '1m',
+      open: 25.1,
+      high: 25.2,
+      low: 25.0,
+      close: 25.15,
+      volume: 120,
+      open_time: '2026-04-24T13:10:00Z',
+      close_time: '2026-04-24T13:10:59Z',
+    }
+
+    expect(getCandleTimestampKey(candle)).toBe(1_777_036_200)
   })
 })
